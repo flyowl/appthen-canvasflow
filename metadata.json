@@ -1,0 +1,5 @@
+{
+  "name": "画板管理系统",
+  "description": "A high-performance, extensible whiteboard application built with React Flow. Features infinite canvas, custom shapes, text editing, and real-time property adjustments.",
+  "requestFramePermissions": []
+}

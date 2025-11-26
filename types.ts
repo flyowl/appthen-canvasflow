@@ -1,0 +1,77 @@
+import { Node, Edge } from 'reactflow';
+
+export enum ToolType {
+  SELECT = 'SELECT',
+  RECTANGLE = 'RECTANGLE',
+  CIRCLE = 'CIRCLE',
+  TRIANGLE = 'TRIANGLE',
+  TEXT = 'TEXT',
+  HAND = 'HAND',
+  PEN = 'PEN',
+  GROUP = 'GROUP',
+  MINDMAP = 'MINDMAP',
+  ERASER = 'ERASER',
+}
+
+export type LayoutDirection = 'LR' | 'RL' | 'TB' | 'HS';
+
+export interface MindMapItem {
+  id: string;
+  label: string;
+  children: MindMapItem[];
+  layoutDirection?: LayoutDirection; // Only valid on Root
+  style?: {
+      backgroundColor?: string;
+      borderColor?: string;
+      textColor?: string;
+      fontSize?: number;
+  }
+}
+
+export interface NodeData {
+  label?: string;
+  backgroundColor: string;
+  borderColor: string;
+  borderWidth: number;
+  textColor: string;
+  fontSize: number;
+  width?: number;
+  height?: number;
+  text?: string;
+  align?: 'left' | 'center' | 'right';
+  verticalAlign?: 'top' | 'center' | 'bottom';
+  isEditing?: boolean;
+  // For Drawing Node
+  path?: string;
+  // For Group Node drag interaction
+  isHighlight?: boolean;
+  // For Mind Map
+  mindMapRoot?: MindMapItem;
+}
+
+export type CanvasNode = Node<NodeData>;
+
+export interface AppState {
+  tool: ToolType;
+  selectedNodes: string[];
+  selectedEdges: string[];
+  copiedNodes: Node<NodeData>[];
+  isLayersPanelOpen: boolean;
+  isAIModalOpen: boolean;
+  defaultStyle: {
+    backgroundColor: string;
+    borderColor: string;
+    borderWidth: number;
+    textColor: string;
+    fontSize: number;
+    align: 'left' | 'center' | 'right';
+    verticalAlign: 'top' | 'center' | 'bottom';
+  };
+  setTool: (tool: ToolType) => void;
+  setSelectedNodes: (nodeIds: string[]) => void;
+  setSelectedEdges: (edgeIds: string[]) => void;
+  setCopiedNodes: (nodes: Node<NodeData>[]) => void;
+  toggleLayersPanel: () => void;
+  toggleAIModal: () => void;
+  updateDefaultStyle: (style: Partial<AppState['defaultStyle']>) => void;
+}
