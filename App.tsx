@@ -27,17 +27,64 @@ import PropertiesPanel from './components/PropertiesPanel';
 import LayersPanel from './components/LayersPanel';
 import ContextMenu from './components/ContextMenu';
 import AIGenerator from './components/AIGenerator';
-import { RectangleNode, CircleNode, TextNode, TriangleNode, DrawingNode, GroupNode, MindMapNode, StickyNoteNode } from './components/nodes/CustomNodes';
+import { 
+    RectangleNode, 
+    CircleNode, 
+    TextNode, 
+    TriangleNode, 
+    DiamondNode,
+    ParallelogramNode,
+    HexagonNode,
+    CylinderNode,
+    CloudNode,
+    DocumentNode,
+    DrawingNode, 
+    GroupNode, 
+    MindMapNode, 
+    StickyNoteNode 
+} from './components/nodes/CustomNodes';
 
 const nodeTypes = {
   [ToolType.RECTANGLE]: RectangleNode,
   [ToolType.CIRCLE]: CircleNode,
-  [ToolType.TEXT]: TextNode,
   [ToolType.TRIANGLE]: TriangleNode,
+  [ToolType.DIAMOND]: DiamondNode,
+  [ToolType.PARALLELOGRAM]: ParallelogramNode,
+  [ToolType.HEXAGON]: HexagonNode,
+  [ToolType.CYLINDER]: CylinderNode,
+  [ToolType.CLOUD]: CloudNode,
+  [ToolType.DOCUMENT]: DocumentNode,
+  [ToolType.TEXT]: TextNode,
   [ToolType.PEN]: DrawingNode,
   [ToolType.GROUP]: GroupNode,
   [ToolType.MINDMAP]: MindMapNode,
   [ToolType.STICKY_NOTE]: StickyNoteNode,
+};
+
+// Helper to get distinct colors for each shape type
+const getShapeStyles = (type: ToolType) => {
+    switch (type) {
+        case ToolType.RECTANGLE:
+            return { backgroundColor: '#93c5fd', borderColor: '#2563eb' }; // Blue 300 / 600
+        case ToolType.CIRCLE:
+            return { backgroundColor: '#fcd34d', borderColor: '#d97706' }; // Amber 300 / 600
+        case ToolType.TRIANGLE:
+            return { backgroundColor: '#86efac', borderColor: '#16a34a' }; // Green 300 / 600
+        case ToolType.DIAMOND:
+            return { backgroundColor: '#d8b4fe', borderColor: '#9333ea' }; // Purple 300 / 600
+        case ToolType.PARALLELOGRAM:
+            return { backgroundColor: '#67e8f9', borderColor: '#0891b2' }; // Cyan 300 / 600
+        case ToolType.HEXAGON:
+            return { backgroundColor: '#f9a8d4', borderColor: '#db2777' }; // Pink 300 / 600
+        case ToolType.CYLINDER:
+            return { backgroundColor: '#cbd5e1', borderColor: '#475569' }; // Slate 300 / 600
+        case ToolType.CLOUD:
+            return { backgroundColor: '#7dd3fc', borderColor: '#0284c7' }; // Sky 300 / 600
+        case ToolType.DOCUMENT:
+            return { backgroundColor: '#e5e7eb', borderColor: '#4b5563' }; // Gray 200 / 600
+        default:
+            return {};
+    }
 };
 
 const CanvasBoard: React.FC = () => {
@@ -532,6 +579,8 @@ const CanvasBoard: React.FC = () => {
 
       takeSnapshot(); // Snapshot on new element drop
 
+      const specificStyles = getShapeStyles(type);
+
       const newNode: Node<NodeData> = {
         id: `${type}-${Date.now()}`,
         type,
@@ -539,6 +588,7 @@ const CanvasBoard: React.FC = () => {
         data: {
           label: type === ToolType.TEXT ? '双击编辑' : (type === ToolType.GROUP ? '分区' : (type === ToolType.STICKY_NOTE ? '添加文本' : '形状')),
           ...defaultStyle,
+          ...specificStyles,
           ...(type === ToolType.GROUP ? {
               align: 'left',
               verticalAlign: 'top',
@@ -604,6 +654,8 @@ const CanvasBoard: React.FC = () => {
 
         takeSnapshot(); // Snapshot on new element click create
 
+        const specificStyles = getShapeStyles(tool);
+
         const newNode: Node<NodeData> = {
           id: `${tool}-${Date.now()}`,
           type: tool,
@@ -611,6 +663,7 @@ const CanvasBoard: React.FC = () => {
           data: {
             label: tool === ToolType.TEXT ? '双击编辑' : (tool === ToolType.GROUP ? '分区' : (tool === ToolType.STICKY_NOTE ? '添加文本' : '形状')),
             ...defaultStyle,
+            ...specificStyles,
             ...(tool === ToolType.GROUP ? {
               align: 'left',
               verticalAlign: 'top',
@@ -682,7 +735,7 @@ const CanvasBoard: React.FC = () => {
         data: {
           backgroundColor: 'transparent',
           borderColor: defaultStyle.borderColor,
-          borderWidth: defaultStyle.borderWidth,
+          borderWidth: defaultStyle.borderWidth || 3, // Ensure visible width if default is 0
           textColor: 'transparent',
           fontSize: 0,
           path: `M 0 0`,

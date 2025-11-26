@@ -6,6 +6,7 @@ import {
     AlignLeft, AlignCenter, AlignRight, AlignVerticalJustifyCenter, AlignVerticalJustifyStart, AlignVerticalJustifyEnd,
     Spline, MoveDiagonal, CornerDownRight, ArrowRight, ArrowLeft, Minus, MoreHorizontal, Cable, Activity, Trash2
 } from 'lucide-react';
+import { ToolType } from '../types';
 
 const PropertiesPanel: React.FC = () => {
   const { selectedNodes, selectedEdges, setNodes, setEdges, takeSnapshot } = useStore();
@@ -157,6 +158,12 @@ const PropertiesPanel: React.FC = () => {
             case 'RECTANGLE': return '矩形';
             case 'CIRCLE': return '圆形';
             case 'TRIANGLE': return '三角形';
+            case 'DIAMOND': return '菱形';
+            case 'PARALLELOGRAM': return '平行四边形';
+            case 'HEXAGON': return '六边形';
+            case 'CYLINDER': return '圆柱体';
+            case 'CLOUD': return '云';
+            case 'DOCUMENT': return '文档';
             case 'TEXT': return '文本';
             case 'PEN': return '手绘';
             case 'GROUP': return '分区/组合';
@@ -164,6 +171,8 @@ const PropertiesPanel: React.FC = () => {
             default: return type;
         }
     }
+
+    const supportsBorderRadius = [ToolType.RECTANGLE, ToolType.GROUP, ToolType.STICKY_NOTE].includes(activeNode.type);
 
     return (
         <div className="absolute top-20 right-4 w-72 bg-white rounded-lg shadow-xl border border-gray-200 p-4 z-50 max-h-[calc(100vh-8rem)] overflow-y-auto custom-scrollbar">
@@ -345,17 +354,34 @@ const PropertiesPanel: React.FC = () => {
             <div>
                 <div className="flex justify-between items-center mb-1.5">
                     <label className="text-xs text-gray-500 font-medium">线宽</label>
-                    <span className="text-[10px] text-gray-400 bg-gray-50 px-1.5 rounded">{activeNode.data.borderWidth}px</span>
+                    <span className="text-[10px] text-gray-400 bg-gray-50 px-1.5 rounded">{activeNode.data.borderWidth !== undefined ? activeNode.data.borderWidth : 0}px</span>
                 </div>
                 <input
                     type="range"
-                    min="1"
+                    min="0"
                     max="20"
-                    value={activeNode.data.borderWidth || 2}
+                    value={activeNode.data.borderWidth !== undefined ? activeNode.data.borderWidth : 0}
                     onChange={(e) => updateNodeData('borderWidth', parseInt(e.target.value))}
                     className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-500"
                 />
+            </div>
+
+            {supportsBorderRadius && (
+                <div>
+                    <div className="flex justify-between items-center mb-1.5">
+                        <label className="text-xs text-gray-500 font-medium">圆角</label>
+                        <span className="text-[10px] text-gray-400 bg-gray-50 px-1.5 rounded">{activeNode.data.borderRadius ?? 0}px</span>
+                    </div>
+                    <input
+                        type="range"
+                        min="0"
+                        max="100"
+                        value={activeNode.data.borderRadius ?? 0}
+                        onChange={(e) => updateNodeData('borderRadius', parseInt(e.target.value))}
+                        className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                    />
                 </div>
+            )}
             </div>
 
         </div>

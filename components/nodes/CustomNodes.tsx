@@ -196,15 +196,15 @@ const EditableLabel = ({ id, data, isShape, isGroup }: { id: string, data: NodeD
 export const RectangleNode = memo(({ id, data, selected, isConnectable }: NodeProps<NodeData>) => {
   return (
     <ShapeNodeWrapper selected={selected}>
-      <div className={`relative w-full h-full group ${selected ? 'drop-shadow-sm' : ''}`}>
+      <div className={`relative w-full h-full group transition-all duration-300 ${selected ? 'drop-shadow-md hover:drop-shadow-lg' : 'drop-shadow-sm hover:drop-shadow-md hover:scale-[1.02]'}`}>
         <svg width="100%" height="100%" style={{ overflow: 'visible', position: 'absolute', top: 0, left: 0, pointerEvents: 'none' }}>
             <rect
                 x="0"
                 y="0"
                 width="100%"
                 height="100%"
-                rx="8" 
-                ry="8"
+                rx={data.borderRadius ?? 12} 
+                ry={data.borderRadius ?? 12}
                 fill={data.backgroundColor}
                 stroke={data.borderColor}
                 strokeWidth={data.borderWidth}
@@ -226,7 +226,7 @@ export const RectangleNode = memo(({ id, data, selected, isConnectable }: NodePr
 export const CircleNode = memo(({ id, data, selected, isConnectable }: NodeProps<NodeData>) => {
   return (
     <ShapeNodeWrapper selected={selected}>
-      <div className={`relative w-full h-full group ${selected ? 'drop-shadow-sm' : ''}`}>
+      <div className={`relative w-full h-full group transition-all duration-300 ${selected ? 'drop-shadow-md hover:drop-shadow-lg' : 'drop-shadow-sm hover:drop-shadow-md hover:scale-[1.02]'}`}>
         <svg width="100%" height="100%" style={{ overflow: 'visible', position: 'absolute', top: 0, left: 0, pointerEvents: 'none' }}>
             <ellipse
                 cx="50%"
@@ -254,7 +254,7 @@ export const CircleNode = memo(({ id, data, selected, isConnectable }: NodeProps
 export const TriangleNode = memo(({ id, data, selected, isConnectable }: NodeProps<NodeData>) => {
     return (
         <ShapeNodeWrapper selected={selected}>
-            <div className={`relative w-full h-full group ${selected ? 'drop-shadow-sm' : ''}`}>
+            <div className={`relative w-full h-full group transition-all duration-300 ${selected ? 'drop-shadow-md hover:drop-shadow-lg' : 'drop-shadow-sm hover:drop-shadow-md hover:scale-[1.02]'}`}>
                  <CustomHandle type="source" position={Position.Top} id="top" selected={selected} isConnectable={isConnectable} />
                 <svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none" style={{ overflow: 'visible', position: 'absolute', top: 0, left: 0, pointerEvents: 'none' }}>
                     <path 
@@ -263,6 +263,7 @@ export const TriangleNode = memo(({ id, data, selected, isConnectable }: NodePro
                         stroke={data.borderColor} 
                         strokeWidth={data.borderWidth}
                         vectorEffect="non-scaling-stroke"
+                        strokeLinejoin="round"
                     />
                 </svg>
                 
@@ -278,11 +279,186 @@ export const TriangleNode = memo(({ id, data, selected, isConnectable }: NodePro
     )
 })
 
+export const DiamondNode = memo(({ id, data, selected, isConnectable }: NodeProps<NodeData>) => {
+    return (
+        <ShapeNodeWrapper selected={selected}>
+            <div className={`relative w-full h-full group transition-all duration-300 ${selected ? 'drop-shadow-md hover:drop-shadow-lg' : 'drop-shadow-sm hover:drop-shadow-md hover:scale-[1.02]'}`}>
+                <svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none" style={{ overflow: 'visible', position: 'absolute', top: 0, left: 0, pointerEvents: 'none' }}>
+                    <polygon 
+                        points="50,0 100,50 50,100 0,50" 
+                        fill={data.backgroundColor} 
+                        stroke={data.borderColor} 
+                        strokeWidth={data.borderWidth}
+                        vectorEffect="non-scaling-stroke"
+                        strokeLinejoin="round"
+                    />
+                </svg>
+                
+                <div className="absolute inset-0 flex items-center justify-center p-6">
+                     <EditableLabel id={id} data={data} isShape />
+                </div>
+
+                <CustomHandle type="source" position={Position.Top} id="top" selected={selected} isConnectable={isConnectable} />
+                <CustomHandle type="source" position={Position.Left} id="left" selected={selected} isConnectable={isConnectable} />
+                <CustomHandle type="source" position={Position.Right} id="right" selected={selected} isConnectable={isConnectable} />
+                <CustomHandle type="source" position={Position.Bottom} id="bottom" selected={selected} isConnectable={isConnectable} />
+            </div>
+        </ShapeNodeWrapper>
+    )
+});
+
+export const ParallelogramNode = memo(({ id, data, selected, isConnectable }: NodeProps<NodeData>) => {
+    return (
+        <ShapeNodeWrapper selected={selected}>
+             <div className={`relative w-full h-full group transition-all duration-300 ${selected ? 'drop-shadow-md hover:drop-shadow-lg' : 'drop-shadow-sm hover:drop-shadow-md hover:scale-[1.02]'}`}>
+                <svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none" style={{ overflow: 'visible', position: 'absolute', top: 0, left: 0, pointerEvents: 'none' }}>
+                    <polygon 
+                        points="20,0 100,0 80,100 0,100" 
+                        fill={data.backgroundColor} 
+                        stroke={data.borderColor} 
+                        strokeWidth={data.borderWidth}
+                        vectorEffect="non-scaling-stroke"
+                        strokeLinejoin="round"
+                    />
+                </svg>
+                
+                <div className="absolute inset-0 flex items-center justify-center px-6 py-2">
+                     <EditableLabel id={id} data={data} isShape />
+                </div>
+
+                <CustomHandle type="source" position={Position.Top} id="top" selected={selected} isConnectable={isConnectable} />
+                <CustomHandle type="source" position={Position.Left} id="left" selected={selected} isConnectable={isConnectable} />
+                <CustomHandle type="source" position={Position.Right} id="right" selected={selected} isConnectable={isConnectable} />
+                <CustomHandle type="source" position={Position.Bottom} id="bottom" selected={selected} isConnectable={isConnectable} />
+            </div>
+        </ShapeNodeWrapper>
+    )
+});
+
+export const HexagonNode = memo(({ id, data, selected, isConnectable }: NodeProps<NodeData>) => {
+    return (
+        <ShapeNodeWrapper selected={selected}>
+             <div className={`relative w-full h-full group transition-all duration-300 ${selected ? 'drop-shadow-md hover:drop-shadow-lg' : 'drop-shadow-sm hover:drop-shadow-md hover:scale-[1.02]'}`}>
+                <svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none" style={{ overflow: 'visible', position: 'absolute', top: 0, left: 0, pointerEvents: 'none' }}>
+                    <polygon 
+                        points="25,0 75,0 100,50 75,100 25,100 0,50" 
+                        fill={data.backgroundColor} 
+                        stroke={data.borderColor} 
+                        strokeWidth={data.borderWidth}
+                        vectorEffect="non-scaling-stroke"
+                        strokeLinejoin="round"
+                    />
+                </svg>
+                
+                <div className="absolute inset-0 flex items-center justify-center px-6 py-2">
+                     <EditableLabel id={id} data={data} isShape />
+                </div>
+
+                <CustomHandle type="source" position={Position.Top} id="top" selected={selected} isConnectable={isConnectable} />
+                <CustomHandle type="source" position={Position.Left} id="left" selected={selected} isConnectable={isConnectable} />
+                <CustomHandle type="source" position={Position.Right} id="right" selected={selected} isConnectable={isConnectable} />
+                <CustomHandle type="source" position={Position.Bottom} id="bottom" selected={selected} isConnectable={isConnectable} />
+            </div>
+        </ShapeNodeWrapper>
+    )
+});
+
+export const CylinderNode = memo(({ id, data, selected, isConnectable }: NodeProps<NodeData>) => {
+    return (
+        <ShapeNodeWrapper selected={selected}>
+             <div className={`relative w-full h-full group transition-all duration-300 ${selected ? 'drop-shadow-md hover:drop-shadow-lg' : 'drop-shadow-sm hover:drop-shadow-md hover:scale-[1.02]'}`}>
+                <svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none" style={{ overflow: 'visible', position: 'absolute', top: 0, left: 0, pointerEvents: 'none' }}>
+                    {/* Top Ellipse */}
+                    <path 
+                         d="M0,20 v60 a50,20 0 0 0 100,0 v-60 a50,20 0 0 0 -100,0 z"
+                         fill={data.backgroundColor} 
+                         stroke={data.borderColor} 
+                         strokeWidth={data.borderWidth}
+                         vectorEffect="non-scaling-stroke"
+                    />
+                    <path 
+                         d="M0,20 a50,20 0 0 0 100,0 a50,20 0 0 0 -100,0"
+                         fill={data.backgroundColor} 
+                         stroke={data.borderColor} 
+                         strokeWidth={data.borderWidth}
+                         vectorEffect="non-scaling-stroke"
+                    />
+                </svg>
+                
+                <div className="absolute inset-0 flex items-center justify-center px-4 py-6">
+                     <EditableLabel id={id} data={data} isShape />
+                </div>
+
+                <CustomHandle type="source" position={Position.Top} id="top" selected={selected} isConnectable={isConnectable} />
+                <CustomHandle type="source" position={Position.Left} id="left" selected={selected} isConnectable={isConnectable} />
+                <CustomHandle type="source" position={Position.Right} id="right" selected={selected} isConnectable={isConnectable} />
+                <CustomHandle type="source" position={Position.Bottom} id="bottom" selected={selected} isConnectable={isConnectable} />
+            </div>
+        </ShapeNodeWrapper>
+    )
+});
+
+export const CloudNode = memo(({ id, data, selected, isConnectable }: NodeProps<NodeData>) => {
+    return (
+        <ShapeNodeWrapper selected={selected}>
+             <div className={`relative w-full h-full group transition-all duration-300 ${selected ? 'drop-shadow-md hover:drop-shadow-lg' : 'drop-shadow-sm hover:drop-shadow-md hover:scale-[1.02]'}`}>
+                <svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none" style={{ overflow: 'visible', position: 'absolute', top: 0, left: 0, pointerEvents: 'none' }}>
+                    <path 
+                        d="M25,60 a20,20 0 0,1 0,-40 a20,20 0 0,1 25,-10 a25,25 0 0,1 45,10 a20,20 0 0,1 5,35 a20,20 0 0,1 -15,15 h-60 a20,20 0 0,1 -0,-10 z"
+                        fill={data.backgroundColor} 
+                        stroke={data.borderColor} 
+                        strokeWidth={data.borderWidth}
+                        vectorEffect="non-scaling-stroke"
+                        strokeLinejoin="round"
+                    />
+                </svg>
+                
+                <div className="absolute inset-0 flex items-center justify-center p-4">
+                     <EditableLabel id={id} data={data} isShape />
+                </div>
+
+                <CustomHandle type="source" position={Position.Top} id="top" selected={selected} isConnectable={isConnectable} />
+                <CustomHandle type="source" position={Position.Left} id="left" selected={selected} isConnectable={isConnectable} />
+                <CustomHandle type="source" position={Position.Right} id="right" selected={selected} isConnectable={isConnectable} />
+                <CustomHandle type="source" position={Position.Bottom} id="bottom" selected={selected} isConnectable={isConnectable} />
+            </div>
+        </ShapeNodeWrapper>
+    )
+});
+
+export const DocumentNode = memo(({ id, data, selected, isConnectable }: NodeProps<NodeData>) => {
+    return (
+        <ShapeNodeWrapper selected={selected}>
+             <div className={`relative w-full h-full group transition-all duration-300 ${selected ? 'drop-shadow-md hover:drop-shadow-lg' : 'drop-shadow-sm hover:drop-shadow-md hover:scale-[1.02]'}`}>
+                <svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none" style={{ overflow: 'visible', position: 'absolute', top: 0, left: 0, pointerEvents: 'none' }}>
+                     <path 
+                        d="M10,0 h80 v85 q-20,15 -40,0 t-40,0 Z"
+                        fill={data.backgroundColor} 
+                        stroke={data.borderColor} 
+                        strokeWidth={data.borderWidth}
+                        vectorEffect="non-scaling-stroke"
+                        strokeLinejoin="round"
+                    />
+                </svg>
+                
+                <div className="absolute inset-0 flex items-center justify-center p-4 pb-8">
+                     <EditableLabel id={id} data={data} isShape />
+                </div>
+
+                <CustomHandle type="source" position={Position.Top} id="top" selected={selected} isConnectable={isConnectable} />
+                <CustomHandle type="source" position={Position.Left} id="left" selected={selected} isConnectable={isConnectable} />
+                <CustomHandle type="source" position={Position.Right} id="right" selected={selected} isConnectable={isConnectable} />
+                <CustomHandle type="source" position={Position.Bottom} id="bottom" selected={selected} isConnectable={isConnectable} />
+            </div>
+        </ShapeNodeWrapper>
+    )
+});
+
 export const TextNode = memo(({ id, data, selected, isConnectable }: NodeProps<NodeData>) => {
   return (
     <div
-      className={`relative min-w-[50px] flex items-center group ${
-         selected ? 'border border-blue-500 border-dashed' : 'border border-transparent'
+      className={`relative min-w-[50px] flex items-center group transition-all duration-200 ${
+         selected ? 'border border-blue-500 border-dashed bg-blue-50/20' : 'border border-transparent hover:border-gray-200'
       }`}
     >
        <EditableLabel id={id} data={data} isShape={false} />
@@ -332,17 +508,19 @@ export const GroupNode = memo(({ id, data, selected, isConnectable }: NodeProps<
     const bgColor = data.backgroundColor && data.backgroundColor !== '#ffffff' ? data.backgroundColor : 'rgba(240, 244, 255, 0.2)';
     const borderColor = isHighlighted ? '#3b82f6' : (data.borderColor && data.borderColor !== '#000000' ? data.borderColor : '#cbd5e1');
     const borderStyle = isHighlighted ? 'solid' : 'dashed';
-    const borderWidth = isHighlighted ? 2 : (data.borderWidth || 2);
+    // Use nullish coalescing (??) to allow 0 as a valid border width
+    const borderWidth = isHighlighted ? 2 : (data.borderWidth ?? 2);
     
     return (
         <ShapeNodeWrapper selected={selected} minWidth={150} minHeight={150}>
             <div 
-                className="relative w-full h-full rounded-lg transition-all duration-200 overflow-visible group"
+                className="relative w-full h-full transition-all duration-200 overflow-visible group"
                 style={{
                     backgroundColor: isHighlighted ? 'rgba(59, 130, 246, 0.1)' : bgColor,
                     borderWidth: borderWidth,
                     borderColor: borderColor,
                     borderStyle: borderStyle,
+                    borderRadius: data.borderRadius ?? 8,
                     boxShadow: isHighlighted ? '0 0 0 4px rgba(59, 130, 246, 0.1)' : 'none'
                 }}
             >
@@ -365,13 +543,15 @@ export const StickyNoteNode = memo(({ id, data, selected, isConnectable }: NodeP
     return (
       <ShapeNodeWrapper selected={selected}>
         <div 
-          className={`relative w-full h-full group ${selected ? 'ring-2 ring-blue-500 ring-offset-1' : ''}`}
+          className={`relative w-full h-full group transition-all duration-300 ${
+              selected ? 'ring-2 ring-blue-500 ring-offset-1' : 'hover:scale-[1.02]'
+          }`}
           style={{
               backgroundColor: data.backgroundColor,
               border: `${data.borderWidth}px solid ${data.borderColor}`,
+              borderRadius: data.borderRadius ?? 0,
               // "Floating" shadow effect: deeper and softer than standard
               boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06), 0 10px 15px -3px rgba(0, 0, 0, 0.1)',
-              transition: 'box-shadow 0.2s',
           }}
         >
           <EditableLabel id={id} data={data} isShape />
@@ -412,11 +592,6 @@ const calculateMindMapLayout = (
     root: MindMapItem, 
     direction: LayoutDirection = 'LR'
 ): { nodes: LayoutNode[], bounds: { minX: number, maxX: number, minY: number, maxY: number } } => {
-    // ... (rest of layout logic remains same)
-    
-    // NOTE: Copying existing layout logic for brevity as it was not requested to change.
-    // Assuming implementation is identical to previous file content for calculateMindMapLayout.
-    // I will include the full implementation to be safe since I'm replacing the file.
     
     const nodes: LayoutNode[] = [];
     const hGap = 60;

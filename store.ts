@@ -18,17 +18,18 @@ const initialNodes: Node<NodeData>[] = [
     position: { x: 250, y: 200 },
     data: { 
       label: '欢迎使用画板',
-      backgroundColor: '#EFF6FF',
-      borderColor: '#3B82F6',
+      backgroundColor: '#EFF6FF', // Light Blue 50
+      borderColor: '#3B82F6',     // Blue 500
       borderWidth: 2,
-      textColor: '#1E3A8A',
-      fontSize: 16,
+      textColor: '#1E40AF',       // Blue 800
+      fontSize: 18,
       align: 'center',
       verticalAlign: 'center',
-      width: 250,
-      height: 120
+      width: 260,
+      height: 140,
+      borderRadius: 16
     },
-    style: { width: 250, height: 120 }
+    style: { width: 260, height: 140 }
   },
 ];
 
@@ -41,12 +42,13 @@ export const useStore = create<AppState>((set, get) => ({
   isAIModalOpen: false,
   defaultStyle: {
     backgroundColor: '#ffffff',
-    borderColor: '#000000',
-    borderWidth: 2,
-    textColor: '#000000',
+    borderColor: '#94a3b8', // Slate 400 - Softer than black
+    borderWidth: 0,         // Default to 0 as requested
+    textColor: '#334155',   // Slate 700 - Softer text
     fontSize: 16,
     align: 'center',
     verticalAlign: 'center',
+    borderRadius: 12,       // More rounded by default
   },
   
   // Canvas State
@@ -149,7 +151,9 @@ export const useStore = create<AppState>((set, get) => ({
               future: []
           },
           nodes: [],
-          edges: []
+          edges: [],
+          selectedNodes: [],
+          selectedEdges: []
       });
   }
 }));

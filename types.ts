@@ -5,6 +5,12 @@ export enum ToolType {
   RECTANGLE = 'RECTANGLE',
   CIRCLE = 'CIRCLE',
   TRIANGLE = 'TRIANGLE',
+  DIAMOND = 'DIAMOND',
+  PARALLELOGRAM = 'PARALLELOGRAM',
+  HEXAGON = 'HEXAGON',
+  CYLINDER = 'CYLINDER',
+  CLOUD = 'CLOUD',
+  DOCUMENT = 'DOCUMENT',
   TEXT = 'TEXT',
   STICKY_NOTE = 'STICKY_NOTE',
   HAND = 'HAND',
@@ -48,6 +54,8 @@ export interface NodeData {
   isHighlight?: boolean;
   // For Mind Map
   mindMapRoot?: MindMapItem;
+  // Corner Radius
+  borderRadius?: number;
 }
 
 export type CanvasNode = Node<NodeData>;
@@ -67,6 +75,7 @@ export interface AppState {
     fontSize: number;
     align: 'left' | 'center' | 'right';
     verticalAlign: 'top' | 'center' | 'bottom';
+    borderRadius: number;
   };
   
   // Canvas State
