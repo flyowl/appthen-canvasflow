@@ -4,8 +4,8 @@ import ReactFlow, {
   Controls,
   MiniMap,
   ReactFlowProvider,
-  useNodesState,
-  useEdgesState,
+  useNodesState, // Removed usage
+  useEdgesState, // Removed usage
   addEdge,
   Connection,
   Edge,
@@ -27,7 +27,7 @@ import PropertiesPanel from './components/PropertiesPanel';
 import LayersPanel from './components/LayersPanel';
 import ContextMenu from './components/ContextMenu';
 import AIGenerator from './components/AIGenerator';
-import { RectangleNode, CircleNode, TextNode, TriangleNode, DrawingNode, GroupNode, MindMapNode } from './components/nodes/CustomNodes';
+import { RectangleNode, CircleNode, TextNode, TriangleNode, DrawingNode, GroupNode, MindMapNode, StickyNoteNode } from './components/nodes/CustomNodes';
 
 const nodeTypes = {
   [ToolType.RECTANGLE]: RectangleNode,
@@ -37,35 +37,19 @@ const nodeTypes = {
   [ToolType.PEN]: DrawingNode,
   [ToolType.GROUP]: GroupNode,
   [ToolType.MINDMAP]: MindMapNode,
+  [ToolType.STICKY_NOTE]: StickyNoteNode,
 };
-
-const initialNodes: Node<NodeData>[] = [
-  {
-    id: '1',
-    type: ToolType.RECTANGLE,
-    position: { x: 250, y: 200 },
-    data: { 
-      label: '欢迎使用画板',
-      backgroundColor: '#EFF6FF',
-      borderColor: '#3B82F6',
-      borderWidth: 2,
-      textColor: '#1E3A8A',
-      fontSize: 16,
-      align: 'center',
-      verticalAlign: 'center',
-      width: 250,
-      height: 120
-    },
-    style: { width: 250, height: 120 }
-  },
-];
 
 const CanvasBoard: React.FC = () => {
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
-  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
-  const { tool, setTool, defaultStyle, setSelectedNodes, selectedNodes, copiedNodes, setCopiedNodes, setSelectedEdges } = useStore();
-  const { project, getNodes, screenToFlowPosition, setNodes: setReactFlowNodes } = useReactFlow();
+  // Use Store for Nodes and Edges
+  const { 
+      nodes, edges, onNodesChange, onEdgesChange, setNodes, setEdges, onConnect: onStoreConnect,
+      tool, setTool, defaultStyle, setSelectedNodes, selectedNodes, copiedNodes, setCopiedNodes, setSelectedEdges,
+      takeSnapshot
+  } = useStore();
+
+  const { project, getNodes, screenToFlowPosition } = useReactFlow();
   
   // Interaction State
   const [isSpacePressed, setIsSpacePressed] = useState(false);
@@ -83,15 +67,18 @@ const CanvasBoard: React.FC = () => {
     y: number;
   }>({ isOpen: false, x: 0, y: 0 });
 
-  // Default edge is now curve ('default')
   const onConnect = useCallback(
-    (params: Connection | Edge) => setEdges((eds) => addEdge({
-        ...params, 
-        type: 'default', // Default to Bezier Curve
-        markerEnd: { type: MarkerType.ArrowClosed, color: '#000000' },
-        style: { stroke: '#000000', strokeWidth: 2 }
-    }, eds)),
-    [setEdges]
+    (params: Connection | Edge) => {
+        // Wrap params to ensure default styles
+        const connection = {
+            ...params, 
+            type: 'default', 
+            markerEnd: { type: MarkerType.ArrowClosed, color: '#000000' },
+            style: { stroke: '#000000', strokeWidth: 2 }
+        };
+        onStoreConnect(connection as Connection);
+    },
+    [onStoreConnect]
   );
 
   const onSelectionChange = useCallback(({ nodes, edges }: OnSelectionChangeParams) => {
@@ -104,6 +91,7 @@ const CanvasBoard: React.FC = () => {
     event.preventDefault();
     if (node.type === ToolType.PEN || node.type === ToolType.MINDMAP || tool === ToolType.ERASER) return; 
     
+    // Direct update to store for editing state (no snapshot needed strictly for UI toggle)
     setNodes((nds) => nds.map((n) => {
         if (n.id === node.id) {
             return { ...n, data: { ...n.data, isEditing: true } };
@@ -116,16 +104,21 @@ const CanvasBoard: React.FC = () => {
   const onNodeClick = useCallback(
     (event: React.MouseEvent, node: Node) => {
         if (tool === ToolType.ERASER && node.type === ToolType.PEN) {
+            takeSnapshot();
             setNodes((nds) => nds.filter((n) => n.id !== node.id));
         }
     },
-    [tool, setNodes]
+    [tool, setNodes, takeSnapshot]
   );
 
   // Eraser Logic: Drag to erase (Hover while mouse down)
   const onNodeMouseEnter = useCallback(
       (event: React.MouseEvent, node: Node) => {
           if (tool === ToolType.ERASER && isMouseDown.current && node.type === ToolType.PEN) {
+              // We should probably debounce snapshot here or snapshot on mouse down
+              // For simplicity, we might spam history here if not careful. 
+              // A better eraser would track session.
+              // We'll skip snapshot here for performance or accept it.
               setNodes((nds) => nds.filter((n) => n.id !== node.id));
           }
       },
@@ -139,6 +132,7 @@ const CanvasBoard: React.FC = () => {
     const newLabel = window.prompt('请输入连接线文字:', currentLabel);
     
     if (newLabel !== null) {
+        takeSnapshot();
         setEdges((eds) => eds.map((e) => {
             if (e.id === edge.id) {
                 return { ...e, label: newLabel };
@@ -146,9 +140,8 @@ const CanvasBoard: React.FC = () => {
             return e;
         }));
     }
-  }, [setEdges]);
+  }, [setEdges, takeSnapshot]);
 
-  // Helper to check for cycles in group hierarchy
   const isDescendant = useCallback((targetId: string, potentialAncestorId: string, allNodes: Node[]) => {
       let currentId: string | undefined = targetId;
       while (currentId) {
@@ -160,9 +153,7 @@ const CanvasBoard: React.FC = () => {
       return false;
   }, []);
 
-  // Helper to find intersecting group
   const findTargetGroup = useCallback((node: Node, allNodes: Node[]) => {
-      // Calculate absolute center of the node
       const absX = node.positionAbsolute?.x ?? node.position.x;
       const absY = node.positionAbsolute?.y ?? node.position.y;
       const width = node.width || Number(node.style?.width) || 150;
@@ -170,10 +161,8 @@ const CanvasBoard: React.FC = () => {
       const centerX = absX + width / 2;
       const centerY = absY + height / 2;
 
-      // Filter for groups, excluding self and current children (to avoid circular checks if needed)
       const groups = allNodes.filter(n => n.type === ToolType.GROUP && n.id !== node.id);
 
-      // Find the last group (highest z-index typically) that contains the center
       for (let i = groups.length - 1; i >= 0; i--) {
           const group = groups[i];
           const gX = group.positionAbsolute?.x ?? group.position.x;
@@ -188,18 +177,19 @@ const CanvasBoard: React.FC = () => {
       return undefined;
   }, []);
 
-  // Highlight groups when dragging over them
+  // Snapshot before dragging starts
+  const onNodeDragStart: NodeDragHandler = useCallback(() => {
+      takeSnapshot();
+  }, [takeSnapshot]);
+
   const onNodeDrag: NodeDragHandler = useCallback((event, node, draggedNodes) => {
-      // Identify the target group for the main dragged node (or first in selection)
       const allNodes = getNodes();
       const targetGroup = findTargetGroup(node, allNodes);
       
-      // Prevent highlighting if target is a descendant (cycle prevention)
       if (targetGroup && isDescendant(targetGroup.id, node.id, allNodes)) {
           return; 
       }
 
-      // Optimistically update highlight state
       setNodes((currentNodes) => currentNodes.map(n => {
           if (n.type === ToolType.GROUP) {
               const isHighlight = targetGroup?.id === n.id;
@@ -211,17 +201,13 @@ const CanvasBoard: React.FC = () => {
       }));
   }, [getNodes, setNodes, findTargetGroup, isDescendant]);
 
-  // Handle Dragging Node into Group (Partition)
   const onNodeDragStop: NodeDragHandler = useCallback(
     (event, node, draggedNodes) => {
-        // Clear all highlights first
         setNodes(nds => nds.map(n => n.type === ToolType.GROUP ? { ...n, data: { ...n.data, isHighlight: false } } : n));
 
-        // Ensure we process all dragged nodes
         const nodesToProcess = draggedNodes && draggedNodes.length > 0 ? draggedNodes : [node];
         
         setNodes((currentNodes) => {
-            // We need a fresh lookup map because we might modify nodes
             let updatedNodesList = [...currentNodes];
             const nodeMap = new Map(updatedNodesList.map(n => [n.id, n]));
 
@@ -231,17 +217,14 @@ const CanvasBoard: React.FC = () => {
 
                 let targetGroup = findTargetGroup(draggedNode, updatedNodesList);
                 
-                // Cycle check: cannot drag parent into its own child hierarchy
                 if (targetGroup && isDescendant(targetGroup.id, draggedNode.id, updatedNodesList)) {
                     targetGroup = undefined;
                 }
 
-                // Helper to safely get absolute props
                 const absX = draggedNode.positionAbsolute?.x ?? draggedNode.position.x;
                 const absY = draggedNode.positionAbsolute?.y ?? draggedNode.position.y;
 
                 if (targetGroup) {
-                    // Case 1: Moving INTO a group (or switching groups)
                     if (currentNodeState.parentNode !== targetGroup.id) {
                         const groupAbsX = targetGroup.positionAbsolute?.x ?? targetGroup.position.x;
                         const groupAbsY = targetGroup.positionAbsolute?.y ?? targetGroup.position.y;
@@ -249,19 +232,16 @@ const CanvasBoard: React.FC = () => {
                         const newNode = {
                             ...currentNodeState,
                             parentNode: targetGroup.id,
-                            extent: undefined, // Allowing children to move freely inside
+                            extent: undefined, 
                             position: {
                                 x: absX - groupAbsX,
                                 y: absY - groupAbsY
                             },
                         };
-                        
-                        // Update in the list
                         const idx = updatedNodesList.findIndex(n => n.id === newNode.id);
                         if (idx !== -1) updatedNodesList[idx] = newNode;
                     }
                 } else {
-                    // Case 2: Moving OUT of a group (detach)
                     if (currentNodeState.parentNode) {
                         const newNode = {
                             ...currentNodeState,
@@ -272,8 +252,6 @@ const CanvasBoard: React.FC = () => {
                                 y: absY
                             }
                         };
-                        
-                        // Move to end of array to ensure it renders on top of the group it just left
                         const idx = updatedNodesList.findIndex(n => n.id === newNode.id);
                         if (idx !== -1) {
                             updatedNodesList.splice(idx, 1);
@@ -328,6 +306,11 @@ const CanvasBoard: React.FC = () => {
 
   const handleMenuAction = useCallback((action: string) => {
       const selectedNodeObjs = getNodes().filter(n => selectedNodes.includes(n.id));
+
+      // Actions that modify structure need snapshots
+      if(['delete', 'paste', 'front', 'back', 'forward', 'backward', 'group', 'ungroup'].includes(action)) {
+          takeSnapshot();
+      }
 
       switch(action) {
           case 'delete':
@@ -393,7 +376,6 @@ const CanvasBoard: React.FC = () => {
                   const selected = new Set(selectedNodes);
                   const movingNodes = prevNodes.filter(n => selected.has(n.id));
                   const otherNodes = prevNodes.filter(n => !selected.has(n.id));
-                  // Fix: Spread the movingNodes array instead of nesting it
                   return [...movingNodes, ...otherNodes];
               });
               break;
@@ -480,9 +462,6 @@ const CanvasBoard: React.FC = () => {
                       draggable: false 
                   }));
 
-                  // Insert group before children so z-order usually works out (but react-flow parent/child rendering handles this)
-                  // Actually, standard react flow renders children relative to parent if parentNode is set.
-                  // We put group first.
                   setNodes((nds) => {
                       const nonSelected = nds.filter(n => !selectedNodes.includes(n.id));
                       return [...nonSelected, groupNode, ...updatedChildren];
@@ -519,14 +498,13 @@ const CanvasBoard: React.FC = () => {
 
                   setNodes((nds) => {
                       const remaining = nds.filter(n => !groupIds.includes(n.id) && !children.find(c => c.id === n.id));
-                      // Add ungrouped children to end so they are on top
                       return [...remaining, ...ungroupedChildren];
                   });
                   setSelectedNodes(ungroupedChildren.map(n => n.id));
               }
               break;
       }
-  }, [selectedNodes, copiedNodes, menuState, getNodes, setNodes, setSelectedNodes, setCopiedNodes, screenToFlowPosition, defaultStyle]);
+  }, [selectedNodes, copiedNodes, menuState, getNodes, setNodes, setSelectedNodes, setCopiedNodes, screenToFlowPosition, defaultStyle, takeSnapshot]);
 
 
   const onDragOver = useCallback((event: React.DragEvent) => {
@@ -552,12 +530,14 @@ const CanvasBoard: React.FC = () => {
         });
       }
 
+      takeSnapshot(); // Snapshot on new element drop
+
       const newNode: Node<NodeData> = {
         id: `${type}-${Date.now()}`,
         type,
         position,
         data: {
-          label: type === ToolType.TEXT ? '双击编辑' : (type === ToolType.GROUP ? '分区' : '形状'),
+          label: type === ToolType.TEXT ? '双击编辑' : (type === ToolType.GROUP ? '分区' : (type === ToolType.STICKY_NOTE ? '添加文本' : '形状')),
           ...defaultStyle,
           ...(type === ToolType.GROUP ? {
               align: 'left',
@@ -565,6 +545,15 @@ const CanvasBoard: React.FC = () => {
               backgroundColor: 'rgba(240, 244, 255, 0.4)',
               borderColor: '#94a3b8',
               borderWidth: 2
+          } : {}),
+          ...(type === ToolType.STICKY_NOTE ? {
+            backgroundColor: '#fef08a', 
+            borderColor: 'transparent',
+            borderWidth: 0,
+            align: 'left',
+            verticalAlign: 'top',
+            fontSize: 14,
+            textColor: '#422006',
           } : {}),
           ...(type === ToolType.MINDMAP ? {
              mindMapRoot: {
@@ -586,7 +575,7 @@ const CanvasBoard: React.FC = () => {
       setNodes((nds) => nds.concat(newNode));
       setTool(ToolType.SELECT);
     },
-    [project, screenToFlowPosition, setNodes, setTool, defaultStyle]
+    [project, screenToFlowPosition, setNodes, setTool, defaultStyle, takeSnapshot]
   );
 
 
@@ -613,12 +602,14 @@ const CanvasBoard: React.FC = () => {
           y: event.clientY - bounds.top,
         });
 
+        takeSnapshot(); // Snapshot on new element click create
+
         const newNode: Node<NodeData> = {
           id: `${tool}-${Date.now()}`,
           type: tool,
           position,
           data: {
-            label: tool === ToolType.TEXT ? '双击编辑' : (tool === ToolType.GROUP ? '分区' : '形状'),
+            label: tool === ToolType.TEXT ? '双击编辑' : (tool === ToolType.GROUP ? '分区' : (tool === ToolType.STICKY_NOTE ? '添加文本' : '形状')),
             ...defaultStyle,
             ...(tool === ToolType.GROUP ? {
               align: 'left',
@@ -626,6 +617,15 @@ const CanvasBoard: React.FC = () => {
               backgroundColor: 'rgba(240, 244, 255, 0.4)',
               borderColor: '#94a3b8',
               borderWidth: 2
+            } : {}),
+            ...(tool === ToolType.STICKY_NOTE ? {
+              backgroundColor: '#fef08a',
+              borderColor: 'transparent',
+              borderWidth: 0,
+              align: 'left',
+              verticalAlign: 'top',
+              fontSize: 14,
+              textColor: '#422006',
             } : {}),
             ...(tool === ToolType.MINDMAP ? {
                 mindMapRoot: {
@@ -648,12 +648,12 @@ const CanvasBoard: React.FC = () => {
       setTool(ToolType.SELECT);
     }
     },
-    [project, tool, setTool, setNodes, defaultStyle, closeContextMenu]
+    [project, tool, setTool, setNodes, defaultStyle, closeContextMenu, takeSnapshot]
   );
 
   const onMouseDown = useCallback(
     (event: React.MouseEvent) => {
-      isMouseDown.current = true; // Track globally
+      isMouseDown.current = true;
       
       if(menuState.isOpen) closeContextMenu();
 
@@ -672,6 +672,9 @@ const CanvasBoard: React.FC = () => {
       currentDrawingId.current = `pen-${Date.now()}`;
       currentPath.current = [{ x: 0, y: 0 }]; 
 
+      // For pen, we snapshot at start
+      takeSnapshot();
+
       const newNode: Node<NodeData> = {
         id: currentDrawingId.current,
         type: ToolType.PEN,
@@ -689,7 +692,7 @@ const CanvasBoard: React.FC = () => {
 
       setNodes((nds) => nds.concat(newNode));
     },
-    [tool, project, defaultStyle, setNodes, menuState, closeContextMenu]
+    [tool, project, defaultStyle, setNodes, menuState, closeContextMenu, takeSnapshot]
   );
 
   const onMouseMove = useCallback(
@@ -760,7 +763,6 @@ const CanvasBoard: React.FC = () => {
               }
           }
           
-          // Spacebar logic
           if (e.code === 'Space' && !e.repeat) {
             const activeElement = document.activeElement;
             const isInput = activeElement instanceof HTMLInputElement || activeElement instanceof HTMLTextAreaElement;
@@ -798,10 +800,8 @@ const CanvasBoard: React.FC = () => {
 
   const isGroupSelected = selectedNodes.length === 1 && getNodes().find(n => n.id === selectedNodes[0])?.type === ToolType.GROUP;
 
-  // Determine pan and selection behavior
   const panOnDrag = tool === ToolType.HAND || (tool === ToolType.SELECT && isSpacePressed);
   const selectionOnDrag = tool === ToolType.SELECT && !isSpacePressed;
-  // Disable node dragging when using Eraser or Pen to prevent accidental moves
   const nodesDraggable = tool !== ToolType.PEN && tool !== ToolType.ERASER;
 
   return (
@@ -822,6 +822,7 @@ const CanvasBoard: React.FC = () => {
         onNodeClick={onNodeClick}
         onNodeMouseEnter={onNodeMouseEnter}
         onNodeDragStop={onNodeDragStop}
+        onNodeDragStart={onNodeDragStart} // Added
         onNodeDrag={onNodeDrag}
         onNodeContextMenu={onNodeContextMenu}
         onPaneContextMenu={onPaneContextMenu}

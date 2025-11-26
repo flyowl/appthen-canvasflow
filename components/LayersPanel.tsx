@@ -42,6 +42,7 @@ const LayersPanel: React.FC = () => {
           [ToolType.PEN]: '手绘',
           [ToolType.GROUP]: '组合',
           [ToolType.MINDMAP]: '思维导图',
+          [ToolType.STICKY_NOTE]: '便签',
       };
 
       if (node.data.label && node.type !== ToolType.PEN && node.type !== ToolType.MINDMAP) return node.data.label;

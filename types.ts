@@ -1,4 +1,4 @@
-import { Node, Edge } from 'reactflow';
+import { Node, Edge, OnNodesChange, OnEdgesChange, Connection } from 'reactflow';
 
 export enum ToolType {
   SELECT = 'SELECT',
@@ -6,6 +6,7 @@ export enum ToolType {
   CIRCLE = 'CIRCLE',
   TRIANGLE = 'TRIANGLE',
   TEXT = 'TEXT',
+  STICKY_NOTE = 'STICKY_NOTE',
   HAND = 'HAND',
   PEN = 'PEN',
   GROUP = 'GROUP',
@@ -67,6 +68,15 @@ export interface AppState {
     align: 'left' | 'center' | 'right';
     verticalAlign: 'top' | 'center' | 'bottom';
   };
+  
+  // Canvas State
+  nodes: Node<NodeData>[];
+  edges: Edge[];
+  history: {
+      past: { nodes: Node<NodeData>[], edges: Edge[] }[];
+      future: { nodes: Node<NodeData>[], edges: Edge[] }[];
+  };
+
   setTool: (tool: ToolType) => void;
   setSelectedNodes: (nodeIds: string[]) => void;
   setSelectedEdges: (edgeIds: string[]) => void;
@@ -74,4 +84,15 @@ export interface AppState {
   toggleLayersPanel: () => void;
   toggleAIModal: () => void;
   updateDefaultStyle: (style: Partial<AppState['defaultStyle']>) => void;
+
+  // Actions
+  setNodes: (payload: Node<NodeData>[] | ((nodes: Node<NodeData>[]) => Node<NodeData>[])) => void;
+  setEdges: (payload: Edge[] | ((edges: Edge[]) => Edge[])) => void;
+  onNodesChange: OnNodesChange;
+  onEdgesChange: OnEdgesChange;
+  onConnect: (connection: Connection) => void;
+  takeSnapshot: () => void;
+  undo: () => void;
+  redo: () => void;
+  clearAll: () => void;
 }

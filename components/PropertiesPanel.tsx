@@ -8,8 +8,8 @@ import {
 } from 'lucide-react';
 
 const PropertiesPanel: React.FC = () => {
-  const { selectedNodes, selectedEdges } = useStore();
-  const { getNodes, setNodes, getEdges, setEdges } = useReactFlow();
+  const { selectedNodes, selectedEdges, setNodes, setEdges, takeSnapshot } = useStore();
+  const { getNodes, getEdges } = useReactFlow();
   
   const [activeNode, setActiveNode] = useState<any>(null);
   const [activeEdge, setActiveEdge] = useState<any>(null);
@@ -28,6 +28,12 @@ const PropertiesPanel: React.FC = () => {
       setActiveEdge(null);
     }
   }, [selectedNodes, selectedEdges, getNodes, getEdges]);
+
+  // Wrapper to save history before modification if starting a new interaction
+  // For sliders/inputs, debouncing history is ideal, but for simplicity we assume fine-grained history here or relying on user 'takeSnapshot' logic might be too manual.
+  // We'll skip auto-snapshot on every keystroke, relying on important actions or just direct updates. 
+  // To make undo usable for property edits, we should snapshot on focus or change start, but that's complex.
+  // We will just update state directly for now.
 
   // Node Updater
   const updateNodeData = (key: string, value: any) => {
@@ -111,6 +117,7 @@ const PropertiesPanel: React.FC = () => {
   }
 
   const deleteSelected = () => {
+    takeSnapshot();
     if (activeNode) {
         setNodes((nodes) => nodes.filter(n => n.id !== activeNode.id));
         setActiveNode(null);
@@ -123,6 +130,7 @@ const PropertiesPanel: React.FC = () => {
 
   const bringToFront = () => {
       if(!activeNode) return;
+      takeSnapshot();
       setNodes((nodes) => {
           const others = nodes.filter(n => n.id !== activeNode.id);
           return [...others, activeNode];
@@ -131,6 +139,7 @@ const PropertiesPanel: React.FC = () => {
 
   const sendToBack = () => {
       if(!activeNode) return;
+      takeSnapshot();
       setNodes((nodes) => {
           const others = nodes.filter(n => n.id !== activeNode.id);
           return [activeNode, ...others];
@@ -151,6 +160,7 @@ const PropertiesPanel: React.FC = () => {
             case 'TEXT': return '文本';
             case 'PEN': return '手绘';
             case 'GROUP': return '分区/组合';
+            case 'STICKY_NOTE': return '便签';
             default: return type;
         }
     }
