@@ -28,6 +28,9 @@ import {
   Cloud,
   File, // For Document
   RectangleHorizontal, // For Parallelogram (placeholder)
+  Image as ImageIcon,
+  Video as VideoIcon,
+  Film
 } from 'lucide-react';
 
 // Custom small Parallelogram icon if needed, or use generic
@@ -105,6 +108,15 @@ const Toolbar: React.FC = () => {
             { type: ToolType.DOCUMENT, icon: <File size={18} />, label: '文档', draggable: true },
         ]
     },
+    {
+      group: true,
+      label: '多媒体',
+      icon: <ImageIcon size={18} />,
+      items: [
+          { type: ToolType.IMAGE, icon: <ImageIcon size={18} />, label: '图片', draggable: true },
+          { type: ToolType.VIDEO, icon: <Film size={18} />, label: '视频', draggable: true },
+      ]
+    },
     { type: ToolType.MINDMAP, icon: <GitBranch size={18} />, label: '思维导图', draggable: true },
     { type: ToolType.GROUP, icon: <LayoutDashboard size={18} />, label: '分区', draggable: true },
     { type: ToolType.STICKY_NOTE, icon: <StickyNote size={18} />, label: '便签', draggable: true },
@@ -144,7 +156,7 @@ const Toolbar: React.FC = () => {
                         {/* Bridge for mouse hover */}
                         <div className="absolute -top-2 left-0 w-full h-4 bg-transparent" />
                         
-                        <div className="bg-white rounded-lg shadow-xl border border-gray-200 p-2 grid grid-cols-3 gap-1 min-w-[140px] animate-in fade-in zoom-in-95 duration-200">
+                        <div className="bg-white rounded-lg shadow-xl border border-gray-200 p-2 grid grid-cols-2 gap-1 min-w-[100px] animate-in fade-in zoom-in-95 duration-200">
                             {t.items.map((subTool) => (
                                 <button
                                     key={subTool.type}

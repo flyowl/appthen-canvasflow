@@ -25,6 +25,7 @@ import { ToolType, NodeData } from './types';
 import Toolbar from './components/Toolbar';
 import PropertiesPanel from './components/PropertiesPanel';
 import LayersPanel from './components/LayersPanel';
+import SearchBar from './components/SearchBar';
 import ContextMenu from './components/ContextMenu';
 import AIGenerator from './components/AIGenerator';
 import { 
@@ -32,16 +33,18 @@ import {
     CircleNode, 
     TextNode, 
     TriangleNode, 
-    DiamondNode,
-    ParallelogramNode,
-    HexagonNode,
-    CylinderNode,
-    CloudNode,
+    DiamondNode, 
+    ParallelogramNode, 
+    HexagonNode, 
+    CylinderNode, 
+    CloudNode, 
     DocumentNode,
     DrawingNode, 
     GroupNode, 
     MindMapNode, 
-    StickyNoteNode 
+    StickyNoteNode, 
+    ImageNode, 
+    VideoNode
 } from './components/nodes/CustomNodes';
 
 const nodeTypes = {
@@ -59,6 +62,8 @@ const nodeTypes = {
   [ToolType.GROUP]: GroupNode,
   [ToolType.MINDMAP]: MindMapNode,
   [ToolType.STICKY_NOTE]: StickyNoteNode,
+  [ToolType.IMAGE]: ImageNode,
+  [ToolType.VIDEO]: VideoNode,
 };
 
 // Helper to get distinct colors for each shape type
@@ -82,6 +87,9 @@ const getShapeStyles = (type: ToolType) => {
             return { backgroundColor: '#7dd3fc', borderColor: '#0284c7' }; // Sky 300 / 600
         case ToolType.DOCUMENT:
             return { backgroundColor: '#e5e7eb', borderColor: '#4b5563' }; // Gray 200 / 600
+        case ToolType.IMAGE:
+        case ToolType.VIDEO:
+            return { backgroundColor: '#ffffff', borderColor: '#e2e8f0' };
         default:
             return {};
     }
@@ -96,7 +104,7 @@ const CanvasBoard: React.FC = () => {
       takeSnapshot
   } = useStore();
 
-  const { project, getNodes, screenToFlowPosition } = useReactFlow();
+  const { project, getNodes, screenToFlowPosition, getViewport } = useReactFlow();
   
   // Interaction State
   const [isSpacePressed, setIsSpacePressed] = useState(false);
@@ -113,6 +121,55 @@ const CanvasBoard: React.FC = () => {
     x: number;
     y: number;
   }>({ isOpen: false, x: 0, y: 0 });
+
+  // Paste Event Listener
+  useEffect(() => {
+    const handlePaste = (event: ClipboardEvent) => {
+        // Check if target is an input/textarea to avoid hijacking text pasting
+        const target = event.target as HTMLElement;
+        if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return;
+
+        const items = event.clipboardData?.items;
+        if (!items) return;
+
+        for (let i = 0; i < items.length; i++) {
+            if (items[i].type.indexOf('image') !== -1) {
+                const blob = items[i].getAsFile();
+                if (blob) {
+                    const reader = new FileReader();
+                    reader.onload = (event) => {
+                        takeSnapshot();
+                        
+                        // Calculate center position based on current viewport
+                        const { x, y, zoom } = getViewport();
+                        // Assume standard screen center roughly
+                        const centerX = (-x + (window.innerWidth / 2)) / zoom;
+                        const centerY = (-y + (window.innerHeight / 2)) / zoom;
+
+                        const src = event.target?.result as string;
+                        const newNode: Node<NodeData> = {
+                            id: `IMAGE-${Date.now()}`,
+                            type: ToolType.IMAGE,
+                            position: { x: centerX - 100, y: centerY - 100 }, // Center node
+                            data: {
+                                ...defaultStyle,
+                                src: src,
+                                label: 'Pasted Image'
+                            },
+                            style: { width: 200, height: 200 }
+                        };
+                        setNodes((nds) => nds.concat(newNode));
+                    };
+                    reader.readAsDataURL(blob);
+                }
+            }
+        }
+    };
+
+    window.addEventListener('paste', handlePaste);
+    return () => window.removeEventListener('paste', handlePaste);
+  }, [setNodes, takeSnapshot, getViewport, defaultStyle]);
+
 
   const onConnect = useCallback(
     (params: Connection | Edge) => {
@@ -136,7 +193,7 @@ const CanvasBoard: React.FC = () => {
   // Double click node to edit text
   const onNodeDoubleClick = useCallback((event: React.MouseEvent, node: Node) => {
     event.preventDefault();
-    if (node.type === ToolType.PEN || node.type === ToolType.MINDMAP || tool === ToolType.ERASER) return; 
+    if (node.type === ToolType.PEN || node.type === ToolType.MINDMAP || node.type === ToolType.IMAGE || node.type === ToolType.VIDEO || tool === ToolType.ERASER) return; 
     
     // Direct update to store for editing state (no snapshot needed strictly for UI toggle)
     setNodes((nds) => nds.map((n) => {
@@ -162,10 +219,6 @@ const CanvasBoard: React.FC = () => {
   const onNodeMouseEnter = useCallback(
       (event: React.MouseEvent, node: Node) => {
           if (tool === ToolType.ERASER && isMouseDown.current && node.type === ToolType.PEN) {
-              // We should probably debounce snapshot here or snapshot on mouse down
-              // For simplicity, we might spam history here if not careful. 
-              // A better eraser would track session.
-              // We'll skip snapshot here for performance or accept it.
               setNodes((nds) => nds.filter((n) => n.id !== node.id));
           }
       },
@@ -190,6 +243,7 @@ const CanvasBoard: React.FC = () => {
   }, [setEdges, takeSnapshot]);
 
   const isDescendant = useCallback((targetId: string, potentialAncestorId: string, allNodes: Node[]) => {
+      if (targetId === potentialAncestorId) return true;
       let currentId: string | undefined = targetId;
       while (currentId) {
           const node = allNodes.find(n => n.id === currentId);
@@ -200,16 +254,19 @@ const CanvasBoard: React.FC = () => {
       return false;
   }, []);
 
-  const findTargetGroup = useCallback((node: Node, allNodes: Node[]) => {
-      const absX = node.positionAbsolute?.x ?? node.position.x;
-      const absY = node.positionAbsolute?.y ?? node.position.y;
+  const findTargetGroup = useCallback((node: Node, allNodes: Node[], absPos?: {x: number, y: number}) => {
+      // Use provided absolute position or fallback to node's internal state
+      const absX = absPos ? absPos.x : (node.positionAbsolute?.x ?? node.position.x);
+      const absY = absPos ? absPos.y : (node.positionAbsolute?.y ?? node.position.y);
       const width = node.width || Number(node.style?.width) || 150;
       const height = node.height || Number(node.style?.height) || 50;
       const centerX = absX + width / 2;
       const centerY = absY + height / 2;
 
+      // Filter for groups that are NOT the node itself
       const groups = allNodes.filter(n => n.type === ToolType.GROUP && n.id !== node.id);
 
+      // Check intersections (reverse order to hit top-most group first)
       for (let i = groups.length - 1; i >= 0; i--) {
           const group = groups[i];
           const gX = group.positionAbsolute?.x ?? group.position.x;
@@ -231,17 +288,47 @@ const CanvasBoard: React.FC = () => {
 
   const onNodeDrag: NodeDragHandler = useCallback((event, node, draggedNodes) => {
       const allNodes = getNodes();
-      const targetGroup = findTargetGroup(node, allNodes);
       
-      if (targetGroup && isDescendant(targetGroup.id, node.id, allNodes)) {
-          return; 
-      }
+      // Determine which nodes we are actively dragging
+      // When dragging a selection, draggedNodes contains all of them.
+      const nodesToCheck = draggedNodes && draggedNodes.length > 0 ? draggedNodes : [node];
+      const groupsToHighlight = new Set<string>();
+
+      nodesToCheck.forEach(draggedNode => {
+          let absX = draggedNode.positionAbsolute?.x;
+          let absY = draggedNode.positionAbsolute?.y;
+          
+          // Calculate absolute position if missing
+          if (typeof absX !== 'number' || typeof absY !== 'number') {
+             const originalNode = allNodes.find(n => n.id === draggedNode.id);
+             if (originalNode && originalNode.parentNode) {
+                 const parent = allNodes.find(n => n.id === originalNode.parentNode);
+                 if (parent && parent.positionAbsolute) {
+                     absX = parent.positionAbsolute.x + draggedNode.position.x;
+                     absY = parent.positionAbsolute.y + draggedNode.position.y;
+                 } else {
+                     absX = draggedNode.position.x;
+                     absY = draggedNode.position.y;
+                 }
+             } else {
+                 absX = draggedNode.position.x;
+                 absY = draggedNode.position.y;
+             }
+          }
+
+          // Use basic intersection check for highlighting
+          const targetGroup = findTargetGroup(draggedNode, allNodes, { x: absX!, y: absY! });
+          
+          if (targetGroup && !isDescendant(targetGroup.id, draggedNode.id, allNodes)) {
+              groupsToHighlight.add(targetGroup.id);
+          }
+      });
 
       setNodes((currentNodes) => currentNodes.map(n => {
           if (n.type === ToolType.GROUP) {
-              const isHighlight = targetGroup?.id === n.id;
-              if (n.data.isHighlight !== isHighlight) {
-                  return { ...n, data: { ...n.data, isHighlight } };
+              const shouldHighlight = groupsToHighlight.has(n.id);
+              if (n.data.isHighlight !== shouldHighlight) {
+                  return { ...n, data: { ...n.data, isHighlight: shouldHighlight } };
               }
           }
           return n;
@@ -250,8 +337,13 @@ const CanvasBoard: React.FC = () => {
 
   const onNodeDragStop: NodeDragHandler = useCallback(
     (event, node, draggedNodes) => {
+        // Reset all group highlights
         setNodes(nds => nds.map(n => n.type === ToolType.GROUP ? { ...n, data: { ...n.data, isHighlight: false } } : n));
 
+        // Get fresh layout data
+        const nodesWithLayout = getNodes();
+        
+        // IMPORTANT: Process all dragged nodes if selection was dragged
         const nodesToProcess = draggedNodes && draggedNodes.length > 0 ? draggedNodes : [node];
         
         setNodes((currentNodes) => {
@@ -262,16 +354,53 @@ const CanvasBoard: React.FC = () => {
                 const currentNodeState = nodeMap.get(draggedNode.id);
                 if (!currentNodeState) return;
 
-                let targetGroup = findTargetGroup(draggedNode, updatedNodesList);
+                // 1. Determine the Absolute Position of the dragged node
+                let absX = draggedNode.positionAbsolute?.x;
+                let absY = draggedNode.positionAbsolute?.y;
+
+                // Robust fallback for absolute position calculation
+                if (typeof absX !== 'number' || typeof absY !== 'number') {
+                    if (currentNodeState.parentNode) {
+                        const parent = nodesWithLayout.find(n => n.id === currentNodeState.parentNode);
+                        if (parent && parent.positionAbsolute) {
+                            absX = parent.positionAbsolute.x + draggedNode.position.x;
+                            absY = parent.positionAbsolute.y + draggedNode.position.y;
+                        } else {
+                            // Fallback to position if parent not found or parent is root
+                            absX = draggedNode.position.x;
+                            absY = draggedNode.position.y;
+                        }
+                    } else {
+                         absX = draggedNode.position.x;
+                         absY = draggedNode.position.y;
+                    }
+                }
+
+                // Try to get dimensions from various sources
+                const width = (draggedNode as any).measured?.width ?? draggedNode.width ?? currentNodeState.width ?? currentNodeState.style?.width ?? 150;
+                const height = (draggedNode as any).measured?.height ?? draggedNode.height ?? currentNodeState.height ?? currentNodeState.style?.height ?? 50;
+
+                // 2. Check for intersection with a Group
+                // We construct a temp object for the checker with the correct Absolute Position
+                const checkNode = {
+                    ...draggedNode,
+                    id: draggedNode.id,
+                    width: Number(width), 
+                    height: Number(height),
+                    positionAbsolute: { x: absX!, y: absY! },
+                    position: { x: absX!, y: absY! }
+                };
+
+                let targetGroup = findTargetGroup(checkNode, nodesWithLayout, { x: absX!, y: absY! });
                 
-                if (targetGroup && isDescendant(targetGroup.id, draggedNode.id, updatedNodesList)) {
+                // Prevent circular referencing
+                if (targetGroup && (targetGroup.id === draggedNode.id || isDescendant(targetGroup.id, draggedNode.id, nodesWithLayout))) {
                     targetGroup = undefined;
                 }
 
-                const absX = draggedNode.positionAbsolute?.x ?? draggedNode.position.x;
-                const absY = draggedNode.positionAbsolute?.y ?? draggedNode.position.y;
-
+                // 3. Update Parent and Position logic
                 if (targetGroup) {
+                    // Moving INTO a group
                     if (currentNodeState.parentNode !== targetGroup.id) {
                         const groupAbsX = targetGroup.positionAbsolute?.x ?? targetGroup.position.x;
                         const groupAbsY = targetGroup.positionAbsolute?.y ?? targetGroup.position.y;
@@ -281,28 +410,35 @@ const CanvasBoard: React.FC = () => {
                             parentNode: targetGroup.id,
                             extent: undefined, 
                             position: {
-                                x: absX - groupAbsX,
-                                y: absY - groupAbsY
+                                x: absX! - groupAbsX,
+                                y: absY! - groupAbsY
                             },
+                            // Preserve layout dims if needed or rely on component style
+                            width: currentNodeState.width,
+                            height: currentNodeState.height,
+                            style: currentNodeState.style
                         };
                         const idx = updatedNodesList.findIndex(n => n.id === newNode.id);
                         if (idx !== -1) updatedNodesList[idx] = newNode;
                     }
                 } else {
+                    // Moving OUT of a group (or staying out)
                     if (currentNodeState.parentNode) {
                         const newNode = {
                             ...currentNodeState,
                             parentNode: undefined,
                             extent: undefined,
                             position: {
-                                x: absX,
-                                y: absY
-                            }
+                                x: absX!,
+                                y: absY!
+                            },
+                             width: currentNodeState.width,
+                             height: currentNodeState.height,
+                             style: currentNodeState.style
                         };
                         const idx = updatedNodesList.findIndex(n => n.id === newNode.id);
                         if (idx !== -1) {
-                            updatedNodesList.splice(idx, 1);
-                            updatedNodesList.push(newNode);
+                            updatedNodesList[idx] = newNode;
                         }
                     }
                 }
@@ -318,6 +454,7 @@ const CanvasBoard: React.FC = () => {
     (event: React.MouseEvent, node: Node) => {
       event.preventDefault();
       
+      // If the clicked node is NOT in the current selection, select ONLY it
       if (!selectedNodes.includes(node.id)) {
         setNodes((nds) => nds.map((n) => ({
             ...n,
@@ -325,6 +462,7 @@ const CanvasBoard: React.FC = () => {
         })));
         setSelectedNodes([node.id]);
       }
+      // If it IS in the selection, do NOT clear selection, just open menu
 
       setMenuState({
         isOpen: true,
@@ -333,6 +471,19 @@ const CanvasBoard: React.FC = () => {
       });
     },
     [selectedNodes, setSelectedNodes, setNodes]
+  );
+
+  // Handler for multiple selection context menu (when clicking the selection box or items)
+  const onSelectionContextMenu = useCallback(
+    (event: React.MouseEvent, nodes: Node[]) => {
+      event.preventDefault();
+      setMenuState({
+        isOpen: true,
+        x: event.clientX,
+        y: event.clientY,
+      });
+    },
+    []
   );
 
   const onPaneContextMenu = useCallback(
@@ -476,7 +627,8 @@ const CanvasBoard: React.FC = () => {
                       maxY = Math.max(maxY, n.position.y + h);
                   });
                   
-                  const padding = 30;
+                  // Changed padding to 0 as requested ("不要配置外边距")
+                  const padding = 0;
                   const width = maxX - minX + (padding * 2);
                   const height = maxY - minY + (padding * 2);
                   const groupX = minX - padding;
@@ -491,11 +643,12 @@ const CanvasBoard: React.FC = () => {
                       style: { width, height },
                       data: { 
                           ...defaultStyle, 
-                          label: '新建分区', 
+                          label: '', // Empty label acts as invisible wrapper (logical group)
                           align: 'left',
                           verticalAlign: 'top',
-                          backgroundColor: 'rgba(240, 244, 255, 0.5)',
-                          borderColor: '#94a3b8'
+                          backgroundColor: 'transparent', // Transparent background
+                          borderColor: 'transparent', // Transparent border
+                          borderWidth: 0
                       },
                   };
 
@@ -563,13 +716,7 @@ const CanvasBoard: React.FC = () => {
     (event: React.DragEvent) => {
       event.preventDefault();
 
-      const type = event.dataTransfer.getData('application/reactflow') as ToolType;
-      if (typeof type === 'undefined' || !type) {
-        return;
-      }
-
       let position = { x: 0, y: 0 };
-      
       if (screenToFlowPosition) {
         position = screenToFlowPosition({
             x: event.clientX,
@@ -577,7 +724,48 @@ const CanvasBoard: React.FC = () => {
         });
       }
 
-      takeSnapshot(); // Snapshot on new element drop
+      // 1. Handle File Drops from Desktop (Images/Videos)
+      if (event.dataTransfer.files && event.dataTransfer.files.length > 0) {
+          takeSnapshot();
+          const files = Array.from(event.dataTransfer.files);
+          let offset = 0;
+
+          files.forEach((fileItem) => {
+              const file = fileItem as File;
+              if (file.type.startsWith('image/') || file.type.startsWith('video/')) {
+                  const isVideo = file.type.startsWith('video/');
+                  const toolType = isVideo ? ToolType.VIDEO : ToolType.IMAGE;
+                  
+                  const reader = new FileReader();
+                  reader.onload = (e) => {
+                      const result = e.target?.result as string;
+                      const newNode: Node<NodeData> = {
+                          id: `${toolType}-${Date.now()}-${offset}`,
+                          type: toolType,
+                          position: { x: position.x + offset, y: position.y + offset },
+                          data: {
+                              ...defaultStyle,
+                              src: result,
+                              label: file.name
+                          },
+                          style: { width: isVideo ? 300 : 200, height: isVideo ? 200 : 200 }
+                      };
+                      setNodes((nds) => nds.concat(newNode));
+                      offset += 30; // Cascade effect
+                  };
+                  reader.readAsDataURL(file);
+              }
+          });
+          return;
+      }
+
+      // 2. Handle Tool Drops from Toolbar
+      const type = event.dataTransfer.getData('application/reactflow') as ToolType;
+      if (typeof type === 'undefined' || !type) {
+        return;
+      }
+
+      takeSnapshot(); 
 
       const specificStyles = getShapeStyles(type);
 
@@ -590,11 +778,12 @@ const CanvasBoard: React.FC = () => {
           ...defaultStyle,
           ...specificStyles,
           ...(type === ToolType.GROUP ? {
+              // Partition Default Style
               align: 'left',
               verticalAlign: 'top',
-              backgroundColor: 'rgba(240, 244, 255, 0.4)',
-              borderColor: '#94a3b8',
-              borderWidth: 2
+              backgroundColor: 'rgba(203, 213, 225, 0.4)', 
+              borderColor: 'transparent',
+              borderWidth: 0
           } : {}),
           ...(type === ToolType.STICKY_NOTE ? {
             backgroundColor: '#fef08a', 
@@ -617,8 +806,8 @@ const CanvasBoard: React.FC = () => {
           }: {})
         },
         style: {
-             width: (type === ToolType.TEXT) ? undefined : (type === ToolType.GROUP ? 300 : 150), 
-             height: (type === ToolType.TEXT) ? undefined : (type === ToolType.GROUP ? 300 : 150)
+             width: (type === ToolType.TEXT) ? undefined : (type === ToolType.GROUP || type === ToolType.VIDEO ? 300 : 150), 
+             height: (type === ToolType.TEXT) ? undefined : (type === ToolType.GROUP || type === ToolType.VIDEO ? 200 : 150)
         }
       };
 
@@ -665,11 +854,12 @@ const CanvasBoard: React.FC = () => {
             ...defaultStyle,
             ...specificStyles,
             ...(tool === ToolType.GROUP ? {
+              // Partition Default Style
               align: 'left',
               verticalAlign: 'top',
-              backgroundColor: 'rgba(240, 244, 255, 0.4)',
-              borderColor: '#94a3b8',
-              borderWidth: 2
+              backgroundColor: 'rgba(203, 213, 225, 0.4)', 
+              borderColor: 'transparent',
+              borderWidth: 0
             } : {}),
             ...(tool === ToolType.STICKY_NOTE ? {
               backgroundColor: '#fef08a',
@@ -692,8 +882,8 @@ const CanvasBoard: React.FC = () => {
              }: {})
           },
           style: {
-             width: (tool === ToolType.TEXT) ? undefined : (tool === ToolType.GROUP ? 300 : 150), 
-             height: (tool === ToolType.TEXT) ? undefined : (tool === ToolType.GROUP ? 300 : 150)
+             width: (tool === ToolType.TEXT) ? undefined : (tool === ToolType.GROUP || tool === ToolType.VIDEO ? 300 : 150), 
+             height: (tool === ToolType.TEXT) ? undefined : (tool === ToolType.GROUP || tool === ToolType.VIDEO ? 200 : 150)
         }
       };
 
@@ -847,6 +1037,8 @@ const CanvasBoard: React.FC = () => {
       case ToolType.ERASER: return 'crosshair';
       case ToolType.SELECT: return 'default';
       case ToolType.GROUP: return 'crosshair';
+      case ToolType.IMAGE: return 'crosshair';
+      case ToolType.VIDEO: return 'crosshair';
       default: return 'cell';
     }
   };
@@ -858,7 +1050,11 @@ const CanvasBoard: React.FC = () => {
   const nodesDraggable = tool !== ToolType.PEN && tool !== ToolType.ERASER;
 
   return (
-    <div className="w-screen h-screen bg-gray-50" ref={reactFlowWrapper}>
+    <div 
+        className="w-screen h-screen bg-gray-50" 
+        ref={reactFlowWrapper}
+        onContextMenu={(e) => e.preventDefault()} // Globally prevent native context menu to ensure consistency
+    >
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -875,9 +1071,10 @@ const CanvasBoard: React.FC = () => {
         onNodeClick={onNodeClick}
         onNodeMouseEnter={onNodeMouseEnter}
         onNodeDragStop={onNodeDragStop}
-        onNodeDragStart={onNodeDragStart} // Added
+        onNodeDragStart={onNodeDragStart} 
         onNodeDrag={onNodeDrag}
         onNodeContextMenu={onNodeContextMenu}
+        onSelectionContextMenu={onSelectionContextMenu} // Correctly passed to handle multi-selection context menu
         onPaneContextMenu={onPaneContextMenu}
         onDragOver={onDragOver}
         onDrop={onDrop}
@@ -913,11 +1110,15 @@ const CanvasBoard: React.FC = () => {
         </Panel>
 
         <Toolbar />
+        <SearchBar />
         <PropertiesPanel />
         <LayersPanel />
         <AIGenerator />
         
-        {menuState.isOpen && (
+      </ReactFlow>
+
+      {/* Moved ContextMenu outside of ReactFlow to prevent event bubbling issues */}
+      {menuState.isOpen && (
             <ContextMenu 
                 x={menuState.x} 
                 y={menuState.y} 
@@ -928,8 +1129,6 @@ const CanvasBoard: React.FC = () => {
                 isGroup={isGroupSelected}
             />
         )}
-
-      </ReactFlow>
     </div>
   );
 };

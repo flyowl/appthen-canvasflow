@@ -1,12 +1,112 @@
-import React, { useEffect, useState } from 'react';
-import { useReactFlow, MarkerType } from 'reactflow';
+import React, { useEffect, useState, useRef } from 'react';
+import { useReactFlow, MarkerType, Node } from 'reactflow';
 import { useStore } from '../store';
 import { 
-    X, Type as TypeIcon, Palette, Square, Scaling, BringToFront, SendToBack,
-    AlignLeft, AlignCenter, AlignRight, AlignVerticalJustifyCenter, AlignVerticalJustifyStart, AlignVerticalJustifyEnd,
-    Spline, MoveDiagonal, CornerDownRight, ArrowRight, ArrowLeft, Minus, MoreHorizontal, Cable, Activity, Trash2
+    X, Type as TypeIcon, Palette, BringToFront, SendToBack,
+    AlignLeft, AlignCenter, AlignRight, AlignVerticalJustifyStart, AlignVerticalJustifyCenter, AlignVerticalJustifyEnd,
+    AlignHorizontalDistributeCenter, AlignVerticalDistributeCenter,
+    Spline, MoveDiagonal, CornerDownRight, ArrowRight, ArrowLeft, Minus, MoreHorizontal, Cable, Activity, Trash2,
+    LayoutTemplate, Image as ImageIcon, Video as VideoIcon, Upload,
+    Maximize, Crop, Scan, StretchHorizontal, Expand
 } from 'lucide-react';
 import { ToolType } from '../types';
+
+const PRESET_COLORS = [
+  '#ffffff', '#000000', '#94a3b8', '#ef4444', '#f97316', 
+  '#f59e0b', '#22c55e', '#3b82f6', '#8b5cf6', '#ec4899'
+];
+
+interface ColorPickerProps {
+    label: string;
+    value: string;
+    onChange: (val: string) => void;
+    hasTransparent?: boolean;
+}
+
+const ColorPicker: React.FC<ColorPickerProps> = ({ label, value, onChange, hasTransparent }) => {
+    const [isOpen, setIsOpen] = useState(false);
+    
+    // Normalize value for the native color input
+    const displayValue = (value === 'transparent' || !value) ? '#ffffff' : value;
+
+    return (
+        <div className="relative">
+            <div className="flex items-center justify-between mb-1.5">
+                <label className="text-xs text-gray-500 font-medium">{label}</label>
+                <button
+                    onClick={() => setIsOpen(!isOpen)}
+                    className="flex items-center gap-2 pl-1 pr-2 py-1 rounded-md border border-gray-200 hover:bg-gray-50 transition-all bg-white min-w-[80px]"
+                >
+                     <div 
+                        className="w-4 h-4 rounded-full border border-gray-200 shadow-sm relative overflow-hidden"
+                        style={{ backgroundColor: value === 'transparent' ? 'transparent' : value }}
+                     >
+                        {value === 'transparent' && (
+                             <div className="absolute inset-0 bg-red-400/80 w-[1px] h-[200%] top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rotate-45 transform origin-center" />
+                        )}
+                     </div>
+                     <span className="text-[10px] text-gray-600 font-mono uppercase truncate flex-1 text-left">{value === 'transparent' ? '无填充' : value}</span>
+                </button>
+            </div>
+
+            {isOpen && (
+                <>
+                    <div className="fixed inset-0 z-[60]" onClick={() => setIsOpen(false)} />
+                    <div className="absolute right-0 top-8 z-[70] bg-white p-3 rounded-lg shadow-xl border border-gray-200 w-56 animate-in fade-in zoom-in-95 duration-200">
+                        <div className="text-[10px] font-bold text-gray-400 mb-2 uppercase flex items-center justify-between">
+                             <span>快速设置</span>
+                             <span className="text-[9px] bg-gray-100 px-1 rounded text-gray-500">Presets</span>
+                        </div>
+                        <div className="flex flex-wrap gap-2 mb-3">
+                            {hasTransparent && (
+                                <button
+                                    onClick={() => { onChange('transparent'); setIsOpen(false); }}
+                                    className={`w-6 h-6 rounded-full border border-gray-200 relative overflow-hidden transition-transform hover:scale-110 ${value === 'transparent' ? 'ring-2 ring-blue-500 ring-offset-1' : ''}`}
+                                    title="无/透明"
+                                >
+                                   <div className="absolute inset-0 bg-red-400/80 w-[1px] h-[200%] top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rotate-45 transform origin-center" />
+                                </button>
+                            )}
+                            {PRESET_COLORS.map(color => (
+                                <button
+                                    key={color}
+                                    onClick={() => { onChange(color); setIsOpen(false); }}
+                                    className={`w-6 h-6 rounded-full border border-gray-200 transition-transform hover:scale-110 ${value === color ? 'ring-2 ring-blue-500 ring-offset-1' : ''}`}
+                                    style={{ backgroundColor: color }}
+                                    title={color}
+                                />
+                            ))}
+                        </div>
+
+                        <div className="h-px bg-gray-100 my-2" />
+
+                        <div className="text-[10px] font-bold text-gray-400 mb-2 uppercase">自定义颜色</div>
+                        <div className="flex items-center gap-2">
+                             <div className="relative w-8 h-8 rounded-lg overflow-hidden border border-gray-200 shadow-sm cursor-pointer hover:opacity-90">
+                                 <input
+                                    type="color"
+                                    value={displayValue}
+                                    onChange={(e) => onChange(e.target.value)}
+                                    className="absolute inset-0 w-[150%] h-[150%] -top-1/4 -left-1/4 cursor-pointer p-0 border-0"
+                                />
+                             </div>
+                             <div className="flex-1 relative">
+                                <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">#</span>
+                                <input 
+                                    type="text"
+                                    value={value === 'transparent' ? '' : value.replace('#', '')}
+                                    onChange={(e) => onChange(`#${e.target.value}`)}
+                                    className="w-full pl-5 pr-2 py-1.5 text-xs border border-gray-200 rounded focus:ring-2 focus:ring-blue-500 outline-none font-mono uppercase"
+                                    placeholder="HEX"
+                                />
+                             </div>
+                        </div>
+                    </div>
+                </>
+            )}
+        </div>
+    );
+};
 
 const PropertiesPanel: React.FC = () => {
   const { selectedNodes, selectedEdges, setNodes, setEdges, takeSnapshot } = useStore();
@@ -14,6 +114,7 @@ const PropertiesPanel: React.FC = () => {
   
   const [activeNode, setActiveNode] = useState<any>(null);
   const [activeEdge, setActiveEdge] = useState<any>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (selectedNodes.length === 1) {
@@ -30,11 +131,140 @@ const PropertiesPanel: React.FC = () => {
     }
   }, [selectedNodes, selectedEdges, getNodes, getEdges]);
 
-  // Wrapper to save history before modification if starting a new interaction
-  // For sliders/inputs, debouncing history is ideal, but for simplicity we assume fine-grained history here or relying on user 'takeSnapshot' logic might be too manual.
-  // We'll skip auto-snapshot on every keystroke, relying on important actions or just direct updates. 
-  // To make undo usable for property edits, we should snapshot on focus or change start, but that's complex.
-  // We will just update state directly for now.
+  // Helper to get node dimensions safely
+  const getNodeSize = (node: any) => {
+    const width = node.width ?? node.style?.width ?? node.data?.width ?? (node.type === 'TEXT' ? 100 : 150);
+    const height = node.height ?? node.style?.height ?? node.data?.height ?? (node.type === 'TEXT' ? 30 : 50);
+    return { width: Number(width), height: Number(height) };
+  };
+
+  const calculateRelativePosition = (node: Node, targetAbsX: number, targetAbsY: number, allNodes: Node[]) => {
+    if (!node.parentNode) return { x: targetAbsX, y: targetAbsY };
+    const parent = allNodes.find(n => n.id === node.parentNode);
+    if (!parent || !parent.positionAbsolute) return { x: targetAbsX, y: targetAbsY };
+    return {
+        x: targetAbsX - parent.positionAbsolute.x,
+        y: targetAbsY - parent.positionAbsolute.y
+    };
+  };
+
+  const alignNodes = (type: 'left' | 'center' | 'right' | 'top' | 'middle' | 'bottom') => {
+      const allNodes = getNodes();
+      const selected = allNodes.filter(n => selectedNodes.includes(n.id));
+      if (selected.length < 2) return;
+      takeSnapshot();
+
+      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+      
+      selected.forEach(n => {
+          const { width, height } = getNodeSize(n);
+          // Use absolute position for robust alignment
+          const x = n.positionAbsolute?.x ?? n.position.x;
+          const y = n.positionAbsolute?.y ?? n.position.y;
+          
+          if (x < minX) minX = x;
+          if (x + width > maxX) maxX = x + width;
+          if (y < minY) minY = y;
+          if (y + height > maxY) maxY = y + height;
+      });
+      
+      const centerX = (minX + maxX) / 2;
+      const centerY = (minY + maxY) / 2;
+
+      setNodes(nds => nds.map(n => {
+          if (!selectedNodes.includes(n.id)) return n;
+          const { width, height } = getNodeSize(n);
+          // Current Absolute
+          const currentAbsX = n.positionAbsolute?.x ?? n.position.x;
+          const currentAbsY = n.positionAbsolute?.y ?? n.position.y;
+          
+          let targetAbsX = currentAbsX;
+          let targetAbsY = currentAbsY;
+
+          switch(type) {
+              case 'left': targetAbsX = minX; break;
+              case 'center': targetAbsX = centerX - (width / 2); break;
+              case 'right': targetAbsX = maxX - width; break;
+              case 'top': targetAbsY = minY; break;
+              case 'middle': targetAbsY = centerY - (height / 2); break;
+              case 'bottom': targetAbsY = maxY - height; break;
+          }
+          
+          const newPos = calculateRelativePosition(n, targetAbsX, targetAbsY, allNodes);
+          return { ...n, position: newPos };
+      }));
+  };
+
+  const distributeNodes = (type: 'horizontal' | 'vertical') => {
+       const allNodes = getNodes();
+       const selected = allNodes.filter(n => selectedNodes.includes(n.id));
+       if (selected.length < 3) return;
+       
+       takeSnapshot();
+       
+       const sorted = [...selected].sort((a, b) => {
+           const ax = a.positionAbsolute?.x ?? a.position.x;
+           const bx = b.positionAbsolute?.x ?? b.position.x;
+           const ay = a.positionAbsolute?.y ?? a.position.y;
+           const by = b.positionAbsolute?.y ?? b.position.y;
+           return type === 'horizontal' ? ax - bx : ay - by;
+       });
+
+       const first = sorted[0];
+       const last = sorted[sorted.length - 1];
+       const firstAbsPos = { x: first.positionAbsolute?.x ?? first.position.x, y: first.positionAbsolute?.y ?? first.position.y };
+       const lastAbsPos = { x: last.positionAbsolute?.x ?? last.position.x, y: last.positionAbsolute?.y ?? last.position.y };
+       const lastSize = getNodeSize(last);
+
+       const updates = new Map();
+
+       if (type === 'horizontal') {
+           const startEdge = firstAbsPos.x;
+           const endEdge = lastAbsPos.x + lastSize.width;
+           const totalNodeWidths = sorted.reduce((acc, n) => acc + getNodeSize(n).width, 0);
+           const totalGapSpace = (endEdge - startEdge) - totalNodeWidths;
+           const gap = totalGapSpace / (sorted.length - 1);
+           
+           let currentX = startEdge;
+           sorted.forEach((n) => {
+               updates.set(n.id, currentX);
+               currentX += getNodeSize(n).width + gap;
+           });
+           
+           setNodes(nds => nds.map(n => {
+               if(updates.has(n.id)) {
+                   const targetX = updates.get(n.id);
+                   const currentAbsY = n.positionAbsolute?.y ?? n.position.y;
+                   const newPos = calculateRelativePosition(n, targetX, currentAbsY, allNodes);
+                   return { ...n, position: newPos };
+               }
+               return n;
+           }));
+
+       } else {
+           const startEdge = firstAbsPos.y;
+           const endEdge = lastAbsPos.y + lastSize.height;
+           const totalNodeHeights = sorted.reduce((acc, n) => acc + getNodeSize(n).height, 0);
+           const totalGapSpace = (endEdge - startEdge) - totalNodeHeights;
+           const gap = totalGapSpace / (sorted.length - 1);
+           
+           let currentY = startEdge;
+           sorted.forEach((n) => {
+               updates.set(n.id, currentY);
+               currentY += getNodeSize(n).height + gap;
+           });
+           
+           setNodes(nds => nds.map(n => {
+               if(updates.has(n.id)) {
+                   const targetY = updates.get(n.id);
+                   const currentAbsX = n.positionAbsolute?.x ?? n.position.x;
+                   const newPos = calculateRelativePosition(n, currentAbsX, targetY, allNodes);
+                   return { ...n, position: newPos };
+               }
+               return n;
+           }));
+       }
+  }
 
   // Node Updater
   const updateNodeData = (key: string, value: any) => {
@@ -54,6 +284,84 @@ const PropertiesPanel: React.FC = () => {
         ...prev,
         data: { ...prev.data, [key]: value }
     }));
+  };
+
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+      if (!activeNode || !event.target.files?.[0]) return;
+      const file = event.target.files[0];
+      const reader = new FileReader();
+      reader.onload = (e) => {
+          const result = e.target?.result;
+          if (typeof result === 'string') {
+              updateNodeData('src', result);
+          }
+      };
+      reader.readAsDataURL(file);
+      // Reset input
+      if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  // Logic to reset image size to original dimensions
+  const handleResetImageSize = () => {
+    if (!activeNode || !activeNode.data.src) return;
+    takeSnapshot();
+    const img = new Image();
+    img.onload = () => {
+        setNodes((nodes) =>
+          nodes.map((n) => {
+            if (n.id === activeNode.id) {
+                return { 
+                    ...n, 
+                    width: img.naturalWidth, 
+                    height: img.naturalHeight,
+                    style: { ...n.style, width: img.naturalWidth, height: img.naturalHeight }
+                };
+            }
+            return n;
+          })
+        );
+        // Refresh active node state to reflect new size
+        setActiveNode((prev: any) => ({
+            ...prev,
+            width: img.naturalWidth,
+            height: img.naturalHeight,
+            style: { ...prev.style, width: img.naturalWidth, height: img.naturalHeight }
+        }));
+    };
+    img.src = activeNode.data.src;
+  };
+
+  // Fullscreen logic
+  const handleFullscreen = () => {
+      if (!activeNode || !activeNode.data.src) return;
+      // Find image element in DOM.
+      // Since we don't have direct ref, we create a temporary overlay
+      const overlay = document.createElement('div');
+      overlay.style.position = 'fixed';
+      overlay.style.top = '0';
+      overlay.style.left = '0';
+      overlay.style.width = '100vw';
+      overlay.style.height = '100vh';
+      overlay.style.backgroundColor = 'rgba(0,0,0,0.9)';
+      overlay.style.zIndex = '99999';
+      overlay.style.display = 'flex';
+      overlay.style.alignItems = 'center';
+      overlay.style.justifyContent = 'center';
+      overlay.style.cursor = 'zoom-out';
+      
+      const img = document.createElement('img');
+      img.src = activeNode.data.src;
+      img.style.maxWidth = '95%';
+      img.style.maxHeight = '95%';
+      img.style.objectFit = 'contain';
+      
+      overlay.appendChild(img);
+      
+      overlay.onclick = () => {
+          document.body.removeChild(overlay);
+      };
+      
+      document.body.appendChild(overlay);
   };
 
   // Edge Updater
@@ -96,14 +404,11 @@ const PropertiesPanel: React.FC = () => {
 
               if (isAnimated) {
                   if (hasMarkerStart && hasMarkerEnd) {
-                      // Alternate animation for bidirectional
                       newEdge.style = { ...newEdge.style, animation: 'dashdraw 0.5s linear infinite alternate' };
                   } else {
-                      // Standard animation
                       newEdge.style = { ...newEdge.style, animation: 'dashdraw 0.5s linear infinite' };
                   }
               } else {
-                  // Remove animation
                   if (newEdge.style?.animation) {
                       const { animation, ...restStyle } = newEdge.style;
                       newEdge.style = restStyle;
@@ -119,8 +424,8 @@ const PropertiesPanel: React.FC = () => {
 
   const deleteSelected = () => {
     takeSnapshot();
-    if (activeNode) {
-        setNodes((nodes) => nodes.filter(n => n.id !== activeNode.id));
+    if (selectedNodes.length > 0) {
+        setNodes((nodes) => nodes.filter(n => !selectedNodes.includes(n.id)));
         setActiveNode(null);
     }
     if (activeEdge) {
@@ -147,6 +452,79 @@ const PropertiesPanel: React.FC = () => {
       });
   };
 
+  // --- MULTI SELECTION RENDERER ---
+  if (selectedNodes.length > 1) {
+    return (
+        <div className="absolute top-20 right-4 w-72 bg-white rounded-lg shadow-xl border border-gray-200 p-4 z-50 animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between mb-4 pb-4 border-b border-gray-100">
+                <h3 className="font-semibold text-gray-800 flex items-center gap-2 text-sm">
+                    <LayoutTemplate size={16} className="text-blue-500" />
+                    多选 ({selectedNodes.length})
+                </h3>
+                 <button 
+                    onClick={deleteSelected}
+                    className="p-1 hover:bg-red-50 text-gray-400 hover:text-red-500 rounded transition-colors"
+                >
+                    <Trash2 size={14} />
+                </button>
+            </div>
+
+            <div className="space-y-4">
+                 <div className="space-y-2">
+                     <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
+                        对齐方式
+                     </label>
+                     <div className="grid grid-cols-6 gap-1 bg-gray-50 p-1.5 rounded-lg border border-gray-100">
+                        <button onClick={() => alignNodes('left')} className="p-1.5 rounded hover:bg-white hover:shadow-sm hover:text-blue-600 text-gray-500 transition-all" title="左对齐">
+                            <AlignLeft size={16} />
+                        </button>
+                        <button onClick={() => alignNodes('center')} className="p-1.5 rounded hover:bg-white hover:shadow-sm hover:text-blue-600 text-gray-500 transition-all" title="水平居中">
+                             <AlignCenter size={16} className="rotate-90" />
+                        </button>
+                        <button onClick={() => alignNodes('right')} className="p-1.5 rounded hover:bg-white hover:shadow-sm hover:text-blue-600 text-gray-500 transition-all" title="右对齐">
+                            <AlignRight size={16} />
+                        </button>
+                        <div className="w-px bg-gray-200 mx-0.5" />
+                        <button onClick={() => alignNodes('top')} className="p-1.5 rounded hover:bg-white hover:shadow-sm hover:text-blue-600 text-gray-500 transition-all" title="顶对齐">
+                            <AlignVerticalJustifyStart size={16} />
+                        </button>
+                        <button onClick={() => alignNodes('middle')} className="p-1.5 rounded hover:bg-white hover:shadow-sm hover:text-blue-600 text-gray-500 transition-all" title="垂直居中">
+                             <AlignVerticalJustifyCenter size={16} />
+                        </button>
+                        <button onClick={() => alignNodes('bottom')} className="p-1.5 rounded hover:bg-white hover:shadow-sm hover:text-blue-600 text-gray-500 transition-all" title="底对齐">
+                            <AlignVerticalJustifyEnd size={16} />
+                        </button>
+                     </div>
+                 </div>
+
+                 <div className="space-y-2">
+                     <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
+                        分布
+                     </label>
+                     <div className="flex gap-2">
+                        <button 
+                            onClick={() => distributeNodes('horizontal')}
+                            className="flex-1 flex items-center justify-center gap-2 p-2 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded text-xs text-gray-600 transition-colors"
+                            title="水平均分"
+                        >
+                            <AlignHorizontalDistributeCenter size={16} />
+                            水平均分
+                        </button>
+                        <button 
+                            onClick={() => distributeNodes('vertical')}
+                            className="flex-1 flex items-center justify-center gap-2 p-2 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded text-xs text-gray-600 transition-colors"
+                            title="垂直均分"
+                        >
+                            <AlignVerticalDistributeCenter size={16} />
+                            垂直均分
+                        </button>
+                     </div>
+                 </div>
+            </div>
+        </div>
+    );
+  }
+
   if (!activeNode && !activeEdge) {
     return null;
   }
@@ -168,11 +546,16 @@ const PropertiesPanel: React.FC = () => {
             case 'PEN': return '手绘';
             case 'GROUP': return '分区/组合';
             case 'STICKY_NOTE': return '便签';
+            case 'IMAGE': return '图片';
+            case 'VIDEO': return '视频';
             default: return type;
         }
     }
 
     const supportsBorderRadius = [ToolType.RECTANGLE, ToolType.GROUP, ToolType.STICKY_NOTE].includes(activeNode.type);
+    const isMedia = [ToolType.IMAGE, ToolType.VIDEO].includes(activeNode.type);
+    const isImage = activeNode.type === ToolType.IMAGE;
+    const isVideo = activeNode.type === ToolType.VIDEO;
 
     return (
         <div className="absolute top-20 right-4 w-72 bg-white rounded-lg shadow-xl border border-gray-200 p-4 z-50 max-h-[calc(100vh-8rem)] overflow-y-auto custom-scrollbar">
@@ -212,8 +595,87 @@ const PropertiesPanel: React.FC = () => {
                 </button>
             </div>
 
+            {/* Media Source Section */}
+            {isMedia && (
+                <div className="space-y-3">
+                     <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-2">
+                        {isVideo ? <VideoIcon size={12} /> : <ImageIcon size={12} />} 
+                        {isVideo ? '视频源' : '图片源'}
+                    </label>
+                    <button
+                        onClick={() => fileInputRef.current?.click()}
+                        className="w-full flex items-center justify-center gap-2 p-2 bg-white border border-dashed border-blue-300 text-blue-600 rounded-lg hover:bg-blue-50 transition-colors text-sm"
+                    >
+                        <Upload size={14} />
+                        更换{isVideo ? '视频' : '图片'}
+                    </button>
+                    <input 
+                        ref={fileInputRef}
+                        type="file" 
+                        accept={isVideo ? "video/*" : "image/*"}
+                        className="hidden" 
+                        onChange={handleFileUpload}
+                    />
+                </div>
+            )}
+            
+            {/* Image Specific Controls */}
+            {isImage && (
+                <div className="space-y-3">
+                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-2">
+                        <ImageIcon size={12} /> 图片显示
+                    </label>
+                    
+                    {/* Size and Fullscreen Actions */}
+                    <div className="flex gap-2">
+                         <button 
+                            onClick={handleResetImageSize}
+                            className="flex-1 flex items-center justify-center gap-1 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded p-1.5 text-xs text-gray-600 transition-colors"
+                            title="重置为原始尺寸 (100%)"
+                        >
+                            <Maximize size={12} /> 原始尺寸
+                        </button>
+                        <button 
+                            onClick={handleFullscreen}
+                            className="flex-1 flex items-center justify-center gap-1 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded p-1.5 text-xs text-gray-600 transition-colors"
+                            title="全屏查看"
+                        >
+                            <Expand size={12} /> 全屏查看
+                        </button>
+                    </div>
+
+                    {/* Object Fit Controls */}
+                    <div className="grid grid-cols-3 gap-1 bg-gray-50 p-1 rounded-lg border border-gray-200">
+                        <button 
+                            onClick={() => updateNodeData('objectFit', 'contain')}
+                            className={`flex flex-col items-center justify-center gap-1 py-1.5 rounded transition-all ${(!activeNode.data.objectFit || activeNode.data.objectFit === 'contain') ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+                            title="完整显示 (Contain)"
+                        >
+                            <Scan size={14} />
+                            <span className="text-[10px] scale-90">完整</span>
+                        </button>
+                        <button 
+                            onClick={() => updateNodeData('objectFit', 'cover')}
+                            className={`flex flex-col items-center justify-center gap-1 py-1.5 rounded transition-all ${activeNode.data.objectFit === 'cover' ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+                            title="裁剪填充 (Cover)"
+                        >
+                            <Crop size={14} />
+                            <span className="text-[10px] scale-90">裁剪</span>
+                        </button>
+                        <button 
+                            onClick={() => updateNodeData('objectFit', 'fill')}
+                            className={`flex flex-col items-center justify-center gap-1 py-1.5 rounded transition-all ${activeNode.data.objectFit === 'fill' ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+                            title="拉伸填充 (Fill)"
+                        >
+                            <StretchHorizontal size={14} />
+                            <span className="text-[10px] scale-90">拉伸</span>
+                        </button>
+                    </div>
+                </div>
+            )}
+
             {/* Content Section */}
-            {activeNode.type !== 'PEN' && (
+            {activeNode.type !== 'PEN' && !isMedia && (
                 <div className="space-y-3">
                 <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-2">
                     <TypeIcon size={12} /> 内容
@@ -231,23 +693,18 @@ const PropertiesPanel: React.FC = () => {
             )}
 
             {/* Typography Section */}
-            {activeNode.type !== 'PEN' && (
-                <div className="space-y-3">
-                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-2">
-                    <TypeIcon size={12} /> 字体与排版
-                </label>
-                <div className="grid grid-cols-2 gap-3">
-                    <div>
-                        <label className="block text-xs text-gray-500 mb-1.5 font-medium">颜色</label>
-                        <div className="flex items-center gap-2 bg-gray-50 p-1.5 rounded-lg border border-gray-200">
-                            <input
-                            type="color"
-                            value={activeNode.data.textColor || '#000000'}
-                            onChange={(e) => updateNodeData('textColor', e.target.value)}
-                            className="w-6 h-6 rounded cursor-pointer border-0 p-0 bg-transparent"
-                            />
-                        </div>
-                    </div>
+            {activeNode.type !== 'PEN' && !isMedia && (
+                <div className="space-y-4">
+                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-2">
+                        <TypeIcon size={12} /> 字体与排版
+                    </label>
+                    
+                    <ColorPicker 
+                        label="颜色" 
+                        value={activeNode.data.textColor || '#000000'} 
+                        onChange={(val) => updateNodeData('textColor', val)} 
+                    />
+
                     <div>
                         <label className="block text-xs text-gray-500 mb-1.5 font-medium">大小 ({activeNode.data.fontSize}px)</label>
                         <input
@@ -257,131 +714,117 @@ const PropertiesPanel: React.FC = () => {
                             className="w-full px-2 py-1.5 text-xs bg-gray-50 border border-gray-200 rounded focus:ring-2 focus:ring-blue-500 outline-none"
                         />
                     </div>
-                </div>
-                
-                {/* Alignment Controls */}
-                <div>
-                    <label className="block text-xs text-gray-500 mb-1.5 font-medium">对齐方式</label>
-                    <div className="flex items-center justify-between gap-1 bg-gray-50 p-1 rounded-lg border border-gray-200">
-                        <div className="flex gap-1 border-r border-gray-200 pr-1 mr-1">
-                            <button 
-                                onClick={() => updateNodeData('align', 'left')}
-                                className={`p-1.5 rounded ${activeNode.data.align === 'left' ? 'bg-white shadow text-blue-500' : 'text-gray-500 hover:text-gray-700'}`}
-                                title="左对齐"
-                            >
-                                <AlignLeft size={14} />
-                            </button>
-                            <button 
-                                onClick={() => updateNodeData('align', 'center')}
-                                className={`p-1.5 rounded ${(activeNode.data.align === 'center' || !activeNode.data.align) ? 'bg-white shadow text-blue-500' : 'text-gray-500 hover:text-gray-700'}`}
-                                title="水平居中"
-                            >
-                                <AlignCenter size={14} />
-                            </button>
-                            <button 
-                                onClick={() => updateNodeData('align', 'right')}
-                                className={`p-1.5 rounded ${activeNode.data.align === 'right' ? 'bg-white shadow text-blue-500' : 'text-gray-500 hover:text-gray-700'}`}
-                                title="右对齐"
-                            >
-                                <AlignRight size={14} />
-                            </button>
-                        </div>
-                        
-                        <div className="flex gap-1">
-                            <button 
-                                onClick={() => updateNodeData('verticalAlign', 'top')}
-                                className={`p-1.5 rounded ${activeNode.data.verticalAlign === 'top' ? 'bg-white shadow text-blue-500' : 'text-gray-500 hover:text-gray-700'}`}
-                                title="顶对齐"
-                            >
-                                <AlignVerticalJustifyStart size={14} />
-                            </button>
-                            <button 
-                                onClick={() => updateNodeData('verticalAlign', 'center')}
-                                className={`p-1.5 rounded ${(activeNode.data.verticalAlign === 'center' || !activeNode.data.verticalAlign) ? 'bg-white shadow text-blue-500' : 'text-gray-500 hover:text-gray-700'}`}
-                                title="垂直居中"
-                            >
-                                <AlignVerticalJustifyCenter size={14} />
-                            </button>
-                            <button 
-                                onClick={() => updateNodeData('verticalAlign', 'bottom')}
-                                className={`p-1.5 rounded ${activeNode.data.verticalAlign === 'bottom' ? 'bg-white shadow text-blue-500' : 'text-gray-500 hover:text-gray-700'}`}
-                                title="底对齐"
-                            >
-                                <AlignVerticalJustifyEnd size={14} />
-                            </button>
+                    
+                    {/* Alignment Controls */}
+                    <div>
+                        <label className="block text-xs text-gray-500 mb-1.5 font-medium">对齐方式</label>
+                        <div className="flex items-center justify-between gap-1 bg-gray-50 p-1 rounded-lg border border-gray-200">
+                            <div className="flex gap-1 border-r border-gray-200 pr-1 mr-1">
+                                <button 
+                                    onClick={() => updateNodeData('align', 'left')}
+                                    className={`p-1.5 rounded ${activeNode.data.align === 'left' ? 'bg-white shadow text-blue-500' : 'text-gray-500 hover:text-gray-700'}`}
+                                    title="左对齐"
+                                >
+                                    <AlignLeft size={14} />
+                                </button>
+                                <button 
+                                    onClick={() => updateNodeData('align', 'center')}
+                                    className={`p-1.5 rounded ${(activeNode.data.align === 'center' || !activeNode.data.align) ? 'bg-white shadow text-blue-500' : 'text-gray-500 hover:text-gray-700'}`}
+                                    title="水平居中"
+                                >
+                                    <AlignCenter size={14} />
+                                </button>
+                                <button 
+                                    onClick={() => updateNodeData('align', 'right')}
+                                    className={`p-1.5 rounded ${activeNode.data.align === 'right' ? 'bg-white shadow text-blue-500' : 'text-gray-500 hover:text-gray-700'}`}
+                                    title="右对齐"
+                                >
+                                    <AlignRight size={14} />
+                                </button>
+                            </div>
+                            
+                            <div className="flex gap-1">
+                                <button 
+                                    onClick={() => updateNodeData('verticalAlign', 'top')}
+                                    className={`p-1.5 rounded ${activeNode.data.verticalAlign === 'top' ? 'bg-white shadow text-blue-500' : 'text-gray-500 hover:text-gray-700'}`}
+                                    title="顶对齐"
+                                >
+                                    <AlignVerticalJustifyStart size={14} />
+                                </button>
+                                <button 
+                                    onClick={() => updateNodeData('verticalAlign', 'center')}
+                                    className={`p-1.5 rounded ${(activeNode.data.verticalAlign === 'center' || !activeNode.data.verticalAlign) ? 'bg-white shadow text-blue-500' : 'text-gray-500 hover:text-gray-700'}`}
+                                    title="垂直居中"
+                                >
+                                    <AlignVerticalJustifyCenter size={14} />
+                                </button>
+                                <button 
+                                    onClick={() => updateNodeData('verticalAlign', 'bottom')}
+                                    className={`p-1.5 rounded ${activeNode.data.verticalAlign === 'bottom' ? 'bg-white shadow text-blue-500' : 'text-gray-500 hover:text-gray-700'}`}
+                                    title="底对齐"
+                                >
+                                    <AlignVerticalJustifyEnd size={14} />
+                                </button>
+                            </div>
                         </div>
                     </div>
-                </div>
                 </div>
             )}
 
             {/* Appearance Section */}
-            <div className="space-y-3">
-            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-2">
-                <Palette size={12} /> 外观
-            </label>
-            
-            <div className="grid grid-cols-2 gap-3">
-                {activeNode.type !== 'PEN' && (
-                    <div>
-                    <label className="block text-xs text-gray-500 mb-1.5 font-medium">填充</label>
-                    <div className="flex items-center gap-2 bg-gray-50 p-1.5 rounded-lg border border-gray-200">
-                        <input
-                        type="color"
-                        value={activeNode.data.backgroundColor || '#ffffff'}
-                        onChange={(e) => updateNodeData('backgroundColor', e.target.value)}
-                        className="w-6 h-6 rounded cursor-pointer border-0 p-0 bg-transparent"
-                        />
-                        <span className="text-[10px] text-gray-500 font-mono uppercase truncate">{activeNode.data.backgroundColor}</span>
-                    </div>
-                    </div>
+            <div className="space-y-4">
+                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-2">
+                    <Palette size={12} /> 外观
+                </label>
+                
+                {activeNode.type !== 'PEN' && !isMedia && (
+                    <ColorPicker 
+                        label="填充" 
+                        value={activeNode.data.backgroundColor || '#ffffff'} 
+                        onChange={(val) => updateNodeData('backgroundColor', val)} 
+                        hasTransparent
+                    />
                 )}
                 
-                <div className={activeNode.type === 'PEN' ? 'col-span-2' : ''}>
-                <label className="block text-xs text-gray-500 mb-1.5 font-medium">描边</label>
-                <div className="flex items-center gap-2 bg-gray-50 p-1.5 rounded-lg border border-gray-200">
-                    <input
-                    type="color"
-                    value={activeNode.data.borderColor || '#000000'}
-                    onChange={(e) => updateNodeData('borderColor', e.target.value)}
-                    className="w-6 h-6 rounded cursor-pointer border-0 p-0 bg-transparent"
-                    />
-                    <span className="text-[10px] text-gray-500 font-mono uppercase truncate">{activeNode.data.borderColor}</span>
-                </div>
-                </div>
-            </div>
-
-            <div>
-                <div className="flex justify-between items-center mb-1.5">
-                    <label className="text-xs text-gray-500 font-medium">线宽</label>
-                    <span className="text-[10px] text-gray-400 bg-gray-50 px-1.5 rounded">{activeNode.data.borderWidth !== undefined ? activeNode.data.borderWidth : 0}px</span>
-                </div>
-                <input
-                    type="range"
-                    min="0"
-                    max="20"
-                    value={activeNode.data.borderWidth !== undefined ? activeNode.data.borderWidth : 0}
-                    onChange={(e) => updateNodeData('borderWidth', parseInt(e.target.value))}
-                    className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                {/* Media can have borders */}
+                <ColorPicker 
+                    label="描边" 
+                    value={activeNode.data.borderColor || '#000000'} 
+                    onChange={(val) => updateNodeData('borderColor', val)} 
+                    hasTransparent
                 />
-            </div>
 
-            {supportsBorderRadius && (
                 <div>
                     <div className="flex justify-between items-center mb-1.5">
-                        <label className="text-xs text-gray-500 font-medium">圆角</label>
-                        <span className="text-[10px] text-gray-400 bg-gray-50 px-1.5 rounded">{activeNode.data.borderRadius ?? 0}px</span>
+                        <label className="text-xs text-gray-500 font-medium">线宽</label>
+                        <span className="text-[10px] text-gray-400 bg-gray-50 px-1.5 rounded">{activeNode.data.borderWidth !== undefined ? activeNode.data.borderWidth : 0}px</span>
                     </div>
                     <input
                         type="range"
                         min="0"
-                        max="100"
-                        value={activeNode.data.borderRadius ?? 0}
-                        onChange={(e) => updateNodeData('borderRadius', parseInt(e.target.value))}
+                        max="20"
+                        value={activeNode.data.borderWidth !== undefined ? activeNode.data.borderWidth : 0}
+                        onChange={(e) => updateNodeData('borderWidth', parseInt(e.target.value))}
                         className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-500"
                     />
                 </div>
-            )}
+
+                {supportsBorderRadius && (
+                    <div>
+                        <div className="flex justify-between items-center mb-1.5">
+                            <label className="text-xs text-gray-500 font-medium">圆角</label>
+                            <span className="text-[10px] text-gray-400 bg-gray-50 px-1.5 rounded">{activeNode.data.borderRadius ?? 0}px</span>
+                        </div>
+                        <input
+                            type="range"
+                            min="0"
+                            max="100"
+                            value={activeNode.data.borderRadius ?? 0}
+                            onChange={(e) => updateNodeData('borderRadius', parseInt(e.target.value))}
+                            className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                        />
+                    </div>
+                )}
             </div>
 
         </div>
@@ -460,34 +903,26 @@ const PropertiesPanel: React.FC = () => {
                  </div>
 
                  {/* Line Style */}
-                 <div className="space-y-3">
+                 <div className="space-y-4">
                      <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
                         外观样式
                     </label>
                     
-                    <div className="grid grid-cols-2 gap-3">
-                        <div>
-                            <label className="block text-xs text-gray-500 mb-1.5 font-medium">颜色</label>
-                            <div className="flex items-center gap-2 bg-gray-50 p-1.5 rounded-lg border border-gray-200">
-                                <input
-                                type="color"
-                                value={edgeStyle.stroke || '#000000'}
-                                onChange={(e) => updateEdgeData('stroke', e.target.value)}
-                                className="w-6 h-6 rounded cursor-pointer border-0 p-0 bg-transparent"
-                                />
-                                <span className="text-[10px] text-gray-500 font-mono uppercase truncate">{edgeStyle.stroke}</span>
-                            </div>
-                        </div>
-                        <div>
-                             <label className="block text-xs text-gray-500 mb-1.5 font-medium">动画流动</label>
-                             <button
-                                onClick={() => updateEdgeData('animated', !activeEdge.animated)}
-                                className={`w-full h-[38px] flex items-center justify-center gap-2 rounded border transition-colors ${activeEdge.animated ? 'bg-blue-50 border-blue-200 text-blue-600' : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'}`}
-                            >
-                                <Activity size={16} />
-                                <span className="text-xs">{activeEdge.animated ? '开启' : '关闭'}</span>
-                            </button>
-                        </div>
+                    <ColorPicker 
+                        label="颜色" 
+                        value={edgeStyle.stroke || '#000000'} 
+                        onChange={(val) => updateEdgeData('stroke', val)} 
+                    />
+
+                    <div>
+                        <label className="block text-xs text-gray-500 mb-1.5 font-medium">动画流动</label>
+                        <button
+                        onClick={() => updateEdgeData('animated', !activeEdge.animated)}
+                        className={`w-full h-[38px] flex items-center justify-center gap-2 rounded border transition-colors ${activeEdge.animated ? 'bg-blue-50 border-blue-200 text-blue-600' : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'}`}
+                        >
+                            <Activity size={16} />
+                            <span className="text-xs">{activeEdge.animated ? '开启' : '关闭'}</span>
+                        </button>
                     </div>
 
                      <div>

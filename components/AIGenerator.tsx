@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useStore } from '../store';
 import { useReactFlow, Node, Edge } from 'reactflow';
-import { X, Sparkles, Loader2, Play, GitBranch, LayoutDashboard } from 'lucide-react';
+import { X, Sparkles, Loader2, Play, GitBranch, LayoutDashboard, Image as ImageIcon, Trash2 } from 'lucide-react';
 import { GoogleGenAI, Type, Schema } from "@google/genai";
 import { ToolType, NodeData } from '../types';
 
@@ -12,11 +12,37 @@ const AIGenerator: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<'general' | 'mindmap'>('general');
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [imageMimeType, setImageMimeType] = useState<string>('image/png');
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   if (!isAIModalOpen) return null;
 
+  const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const result = reader.result as string;
+        // Extract base64 part
+        const base64 = result.split(',')[1];
+        setSelectedImage(base64);
+        setImageMimeType(file.type);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const clearImage = () => {
+    setSelectedImage(null);
+    setImageMimeType('image/png');
+    if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+    }
+  };
+
   const handleGenerate = async () => {
-    if (!prompt.trim()) return;
+    if (!prompt.trim() && !selectedImage) return;
 
     setIsLoading(true);
     setError(null);
@@ -36,11 +62,20 @@ const AIGenerator: React.FC = () => {
          startX = maxX + 100;
       }
 
+      // Construct content parts
+      const parts: any[] = [];
+      
+      if (selectedImage) {
+          parts.push({
+              inlineData: {
+                  mimeType: imageMimeType,
+                  data: selectedImage
+              }
+          });
+      }
+
       if (mode === 'general') {
-        const response = await ai.models.generateContent({
-          model: 'gemini-2.5-flash',
-          contents: `Create a node-based diagram for: "${prompt}". 
-          
+        const instructions = `Create a node-based diagram based on the user request.
           The available node types are: RECTANGLE, CIRCLE, TRIANGLE, TEXT.
           - Use RECTANGLE for processes, services, entities, or generic blocks.
           - Use CIRCLE for start/end points, interfaces, or users.
@@ -52,7 +87,15 @@ const AIGenerator: React.FC = () => {
           - Provide a short, descriptive label for each node.
           - Connect related nodes with edges.
           - Suggest a background color for nodes if relevant (e.g., different colors for different layers), otherwise default to white.
-          `,
+          `;
+        
+        parts.push({
+            text: `${instructions}\n\nUser Request: "${prompt || (selectedImage ? 'Analyze the image and generate a diagram structure.' : '')}"`
+        });
+
+        const response = await ai.models.generateContent({
+          model: 'gemini-2.5-flash',
+          contents: { parts: parts },
           config: {
             responseMimeType: "application/json",
             responseSchema: {
@@ -159,10 +202,7 @@ const AIGenerator: React.FC = () => {
             }
         };
 
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: `Generate a comprehensive and hierarchical Mind Map structure for: "${prompt}".
-            
+        const instructions = `Generate a comprehensive and hierarchical Mind Map structure based on the user request.
             Return a JSON object containing a single 'root' property.
             The 'root' is the central topic. It has 'children' (array of sub-topics).
             
@@ -175,7 +215,15 @@ const AIGenerator: React.FC = () => {
             - 'id': A unique string.
             - 'label': Concise text.
             - 'children': Array of child items (optional for leaf nodes).
-            `,
+            `;
+
+        parts.push({
+            text: `${instructions}\n\nUser Request: "${prompt || (selectedImage ? 'Analyze the image and generate a mind map.' : '')}"`
+        });
+
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: { parts: parts },
             config: {
                 responseMimeType: "application/json",
                 responseSchema: {
@@ -221,6 +269,7 @@ const AIGenerator: React.FC = () => {
       
       toggleAIModal();
       setPrompt('');
+      clearImage();
       
     } catch (err: any) {
       console.error("AI Generation Error:", err);
@@ -278,7 +327,7 @@ const AIGenerator: React.FC = () => {
           </div>
 
           <label className="block text-sm font-medium text-gray-700 mb-2">
-            {mode === 'general' ? '描述你想要的流程图或架构图...' : '描述思维导图的主题...'}
+            {mode === 'general' ? '描述流程图或架构图 (或上传图片)...' : '描述思维导图主题 (或上传图片)...'}
           </label>
           <div className="relative">
             <textarea
@@ -287,17 +336,52 @@ const AIGenerator: React.FC = () => {
               placeholder={mode === 'general' 
                   ? "例如：生成一个电商系统的微服务架构图，包含用户服务、订单服务、支付服务和数据库..." 
                   : "例如：关于人工智能发展历史的思维导图，包含关键里程碑和技术分支..."}
-              className="w-full h-32 px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none resize-none text-sm transition-all"
+              className="w-full h-32 px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none resize-none text-sm transition-all pr-12"
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
                   handleGenerate();
                 }
               }}
             />
+            
+            <div className="absolute top-2 right-2 flex flex-col gap-2">
+                 <button 
+                    onClick={() => fileInputRef.current?.click()}
+                    title="上传参考图片"
+                    className="p-1.5 bg-white border border-gray-200 rounded-lg shadow-sm text-gray-500 hover:text-purple-600 hover:border-purple-200 transition-colors"
+                >
+                    <ImageIcon size={18} />
+                </button>
+                <input 
+                    type="file" 
+                    ref={fileInputRef} 
+                    className="hidden" 
+                    accept="image/*"
+                    onChange={handleImageUpload}
+                />
+            </div>
+
             <div className="absolute bottom-3 right-3 text-xs text-gray-400">
               Ctrl + Enter 发送
             </div>
           </div>
+
+           {selectedImage && (
+                <div className="mt-2 flex items-center gap-2 p-2 bg-purple-50 rounded-lg border border-purple-100 max-w-full">
+                    <img 
+                        src={`data:${imageMimeType};base64,${selectedImage}`} 
+                        alt="Preview" 
+                        className="h-10 w-10 object-cover rounded bg-white border border-purple-100" 
+                    />
+                    <span className="text-xs text-purple-700 truncate flex-1">图片已添加</span>
+                    <button 
+                        onClick={clearImage}
+                        className="p-1 text-purple-400 hover:text-red-500 hover:bg-white rounded transition-colors"
+                    >
+                        <Trash2 size={14} />
+                    </button>
+                </div>
+            )}
 
           {error && (
             <div className="mt-3 p-3 bg-red-50 text-red-600 text-sm rounded-lg flex items-start gap-2">
@@ -317,9 +401,9 @@ const AIGenerator: React.FC = () => {
           </button>
           <button
             onClick={handleGenerate}
-            disabled={isLoading || !prompt.trim()}
+            disabled={isLoading || (!prompt.trim() && !selectedImage)}
             className={`flex items-center gap-2 px-6 py-2 rounded-lg font-medium text-white text-sm transition-all shadow-sm
-              ${isLoading || !prompt.trim() 
+              ${isLoading || (!prompt.trim() && !selectedImage)
                 ? 'bg-purple-300 cursor-not-allowed' 
                 : 'bg-purple-600 hover:bg-purple-700 shadow-purple-200 hover:shadow-purple-300'}
             `}

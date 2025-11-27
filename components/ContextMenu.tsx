@@ -44,7 +44,6 @@ const ContextMenu: React.FC<ContextMenuProps> = ({
     };
   }, [onClose]);
 
-  // Prevent menu from going off-screen
   const style: React.CSSProperties = {
       top: y,
       left: x,
@@ -70,23 +69,27 @@ const ContextMenu: React.FC<ContextMenuProps> = ({
   }: any) => (
     <button
       onClick={(e) => {
-        e.stopPropagation(); // Prevent canvas click events
+        // Critical: Stop propagation to ensure the action fires before any outside click handlers
+        e.stopPropagation();
+        e.nativeEvent.stopImmediatePropagation();
         if(!disabled) {
             onAction(action);
             onClose();
         }
       }}
+      // Stop mousedown to prevent App's onMouseDown from closing the menu before click fires
+      onMouseDown={(e) => { e.stopPropagation(); }}
       disabled={disabled}
-      className={`w-full flex items-center justify-between px-3 py-2 text-sm transition-colors
+      className={`w-full flex items-center justify-between px-3 py-2 text-sm transition-colors text-left
         ${disabled ? 'opacity-50 cursor-not-allowed text-gray-400' : 
           danger ? 'text-red-600 hover:bg-red-50' : 'text-gray-700 hover:bg-gray-100'}
       `}
     >
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 pointer-events-none">
         <Icon size={14} />
         <span>{label}</span>
       </div>
-      {shortcut && <span className="text-xs text-gray-400 ml-4">{shortcut}</span>}
+      {shortcut && <span className="text-xs text-gray-400 ml-4 pointer-events-none">{shortcut}</span>}
     </button>
   );
 
@@ -94,8 +97,13 @@ const ContextMenu: React.FC<ContextMenuProps> = ({
     <div 
       ref={menuRef}
       style={style}
-      className="fixed z-[100] min-w-[220px] bg-white rounded-lg shadow-xl border border-gray-200 py-1.5 animate-in fade-in zoom-in-95 duration-100 select-none"
-      onContextMenu={(e) => e.preventDefault()}
+      className="fixed z-[9999] min-w-[220px] bg-white rounded-lg shadow-xl border border-gray-200 py-1.5 animate-in fade-in zoom-in-95 duration-100 select-none"
+      onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); }}
+      // Stop all propagation from the menu container to avoid conflict with React Flow canvas listeners
+      onMouseDown={(e) => e.stopPropagation()}
+      onPointerDown={(e) => e.stopPropagation()}
+      onClick={(e) => e.stopPropagation()}
+      onDoubleClick={(e) => e.stopPropagation()}
     >
       <MenuItem 
         icon={Copy} 
@@ -112,7 +120,7 @@ const ContextMenu: React.FC<ContextMenuProps> = ({
         disabled={!hasClipboard} 
       />
       
-      <div className="h-px bg-gray-100 my-1.5" />
+      <div className="h-px bg-gray-100 my-1.5 pointer-events-none" />
       
       {isGroup ? (
          <MenuItem 
@@ -131,7 +139,7 @@ const ContextMenu: React.FC<ContextMenuProps> = ({
         />
       )}
 
-      <div className="h-px bg-gray-100 my-1.5" />
+      <div className="h-px bg-gray-100 my-1.5 pointer-events-none" />
 
       <MenuItem 
         icon={BringToFront} 
@@ -158,7 +166,7 @@ const ContextMenu: React.FC<ContextMenuProps> = ({
         disabled={!hasSelection} 
       />
 
-      <div className="h-px bg-gray-100 my-1.5" />
+      <div className="h-px bg-gray-100 my-1.5 pointer-events-none" />
 
       <MenuItem 
         icon={Trash2} 

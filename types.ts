@@ -18,6 +18,8 @@ export enum ToolType {
   GROUP = 'GROUP',
   MINDMAP = 'MINDMAP',
   ERASER = 'ERASER',
+  IMAGE = 'IMAGE',
+  VIDEO = 'VIDEO',
 }
 
 export type LayoutDirection = 'LR' | 'RL' | 'TB' | 'HS';
@@ -56,6 +58,9 @@ export interface NodeData {
   mindMapRoot?: MindMapItem;
   // Corner Radius
   borderRadius?: number;
+  // For Media
+  src?: string;
+  objectFit?: 'contain' | 'cover' | 'fill';
 }
 
 export type CanvasNode = Node<NodeData>;
