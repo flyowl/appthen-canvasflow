@@ -9,3 +9,5 @@ export * from './GroupNode';
 export * from './StickyNoteNode';
 export * from './MindMapNode';
 export * from './MediaNodes';
+export * from './CustomAgentNode';
+export * from './MarkdownNode';

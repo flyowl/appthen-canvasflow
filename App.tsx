@@ -44,7 +44,9 @@ import {
     MindMapNode, 
     StickyNoteNode, 
     ImageNode, 
-    VideoNode
+    VideoNode,
+    CustomAgentNode,
+    MarkdownNode
 } from './components/nodes/CustomNodes';
 
 const nodeTypes = {
@@ -64,6 +66,8 @@ const nodeTypes = {
   [ToolType.STICKY_NOTE]: StickyNoteNode,
   [ToolType.IMAGE]: ImageNode,
   [ToolType.VIDEO]: VideoNode,
+  [ToolType.CUSTOM_AGENT]: CustomAgentNode,
+  [ToolType.MARKDOWN]: MarkdownNode,
 };
 
 // Helper to get distinct colors for each shape type
@@ -89,6 +93,8 @@ const getShapeStyles = (type: ToolType) => {
             return { backgroundColor: '#e5e7eb', borderColor: '#4b5563' }; // Gray 200 / 600
         case ToolType.IMAGE:
         case ToolType.VIDEO:
+        case ToolType.CUSTOM_AGENT:
+        case ToolType.MARKDOWN:
             return { backgroundColor: '#ffffff', borderColor: '#e2e8f0' };
         default:
             return {};
@@ -127,7 +133,7 @@ const CanvasBoard: React.FC = () => {
     const handlePaste = (event: ClipboardEvent) => {
         // Check if target is an input/textarea to avoid hijacking text pasting
         const target = event.target as HTMLElement;
-        if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return;
+        if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable || target.closest('.ProseMirror')) return;
 
         const items = event.clipboardData?.items;
         if (!items) return;
@@ -193,7 +199,7 @@ const CanvasBoard: React.FC = () => {
   // Double click node to edit text
   const onNodeDoubleClick = useCallback((event: React.MouseEvent, node: Node) => {
     event.preventDefault();
-    if (node.type === ToolType.PEN || node.type === ToolType.MINDMAP || node.type === ToolType.IMAGE || node.type === ToolType.VIDEO || tool === ToolType.ERASER) return; 
+    if (node.type === ToolType.PEN || node.type === ToolType.MINDMAP || node.type === ToolType.IMAGE || node.type === ToolType.VIDEO || node.type === ToolType.MARKDOWN || tool === ToolType.ERASER) return; 
     
     // Direct update to store for editing state (no snapshot needed strictly for UI toggle)
     setNodes((nds) => nds.map((n) => {
@@ -768,13 +774,22 @@ const CanvasBoard: React.FC = () => {
       takeSnapshot(); 
 
       const specificStyles = getShapeStyles(type);
+      const isLarge = type === ToolType.GROUP || type === ToolType.VIDEO || type === ToolType.CUSTOM_AGENT || type === ToolType.MARKDOWN;
 
       const newNode: Node<NodeData> = {
         id: `${type}-${Date.now()}`,
         type,
         position,
         data: {
-          label: type === ToolType.TEXT ? '双击编辑' : (type === ToolType.GROUP ? '分区' : (type === ToolType.STICKY_NOTE ? '添加文本' : '形状')),
+          label: type === ToolType.TEXT ? '双击编辑' : (
+              type === ToolType.GROUP ? '分区' : (
+                type === ToolType.STICKY_NOTE ? '添加文本' : (
+                  type === ToolType.CUSTOM_AGENT ? '写一个小红书文案 桌子' : (
+                    type === ToolType.MARKDOWN ? 'Markdown Editor' : '形状'
+                  )
+                )
+              )
+          ),
           ...defaultStyle,
           ...specificStyles,
           ...(type === ToolType.GROUP ? {
@@ -794,6 +809,20 @@ const CanvasBoard: React.FC = () => {
             fontSize: 14,
             textColor: '#422006',
           } : {}),
+           ...(type === ToolType.CUSTOM_AGENT ? {
+             align: 'left',
+             verticalAlign: 'top',
+             fontSize: 14,
+             textColor: '#334155',
+             backgroundColor: '#ffffff',
+             borderColor: '#e2e8f0'
+          } : {}),
+           ...(type === ToolType.MARKDOWN ? {
+             backgroundColor: '#ffffff',
+             borderColor: '#e2e8f0',
+             borderWidth: 1,
+             markdownContent: '# Markdown Editor\n\nStart typing...'
+           } : {}),
           ...(type === ToolType.MINDMAP ? {
              mindMapRoot: {
                  id: 'root',
@@ -806,8 +835,8 @@ const CanvasBoard: React.FC = () => {
           }: {})
         },
         style: {
-             width: (type === ToolType.TEXT) ? undefined : (type === ToolType.GROUP || type === ToolType.VIDEO ? 300 : 150), 
-             height: (type === ToolType.TEXT) ? undefined : (type === ToolType.GROUP || type === ToolType.VIDEO ? 200 : 150)
+             width: (type === ToolType.TEXT) ? undefined : (isLarge ? 300 : 150), 
+             height: (type === ToolType.TEXT) ? undefined : (isLarge ? 300 : 150)
         }
       };
 
@@ -844,13 +873,22 @@ const CanvasBoard: React.FC = () => {
         takeSnapshot(); // Snapshot on new element click create
 
         const specificStyles = getShapeStyles(tool);
+        const isLarge = tool === ToolType.GROUP || tool === ToolType.VIDEO || tool === ToolType.CUSTOM_AGENT || tool === ToolType.MARKDOWN;
 
         const newNode: Node<NodeData> = {
           id: `${tool}-${Date.now()}`,
           type: tool,
           position,
           data: {
-            label: tool === ToolType.TEXT ? '双击编辑' : (tool === ToolType.GROUP ? '分区' : (tool === ToolType.STICKY_NOTE ? '添加文本' : '形状')),
+            label: tool === ToolType.TEXT ? '双击编辑' : (
+                tool === ToolType.GROUP ? '分区' : (
+                    tool === ToolType.STICKY_NOTE ? '添加文本' : (
+                         tool === ToolType.CUSTOM_AGENT ? '写一个小红书文案 桌子' : (
+                            tool === ToolType.MARKDOWN ? 'Markdown Editor' : '形状'
+                         )
+                    )
+                )
+            ),
             ...defaultStyle,
             ...specificStyles,
             ...(tool === ToolType.GROUP ? {
@@ -870,6 +908,20 @@ const CanvasBoard: React.FC = () => {
               fontSize: 14,
               textColor: '#422006',
             } : {}),
+             ...(tool === ToolType.CUSTOM_AGENT ? {
+                align: 'left',
+                verticalAlign: 'top',
+                fontSize: 14,
+                textColor: '#334155',
+                backgroundColor: '#ffffff',
+                borderColor: '#e2e8f0'
+            } : {}),
+            ...(tool === ToolType.MARKDOWN ? {
+                backgroundColor: '#ffffff',
+                borderColor: '#e2e8f0',
+                borderWidth: 1,
+                markdownContent: '# Markdown Editor\n\nStart typing...'
+            } : {}),
             ...(tool === ToolType.MINDMAP ? {
                 mindMapRoot: {
                     id: 'root',
@@ -882,8 +934,8 @@ const CanvasBoard: React.FC = () => {
              }: {})
           },
           style: {
-             width: (tool === ToolType.TEXT) ? undefined : (tool === ToolType.GROUP || tool === ToolType.VIDEO ? 300 : 150), 
-             height: (tool === ToolType.TEXT) ? undefined : (tool === ToolType.GROUP || tool === ToolType.VIDEO ? 200 : 150)
+             width: (tool === ToolType.TEXT) ? undefined : (isLarge ? 300 : 150), 
+             height: (tool === ToolType.TEXT) ? undefined : (isLarge ? 300 : 150)
         }
       };
 
@@ -1000,7 +1052,7 @@ const CanvasBoard: React.FC = () => {
           }
           if (e.key === 'Delete' || e.key === 'Backspace') {
               const activeElement = document.activeElement;
-              const isInput = activeElement instanceof HTMLInputElement || activeElement instanceof HTMLTextAreaElement;
+              const isInput = activeElement instanceof HTMLInputElement || activeElement instanceof HTMLTextAreaElement || activeElement?.closest('.ProseMirror');
               if (!isInput) {
                   handleMenuAction('delete');
               }
@@ -1008,7 +1060,7 @@ const CanvasBoard: React.FC = () => {
           
           if (e.code === 'Space' && !e.repeat) {
             const activeElement = document.activeElement;
-            const isInput = activeElement instanceof HTMLInputElement || activeElement instanceof HTMLTextAreaElement;
+            const isInput = activeElement instanceof HTMLInputElement || activeElement instanceof HTMLTextAreaElement || activeElement?.closest('.ProseMirror');
             if (!isInput) {
                setIsSpacePressed(true);
             }
@@ -1039,6 +1091,8 @@ const CanvasBoard: React.FC = () => {
       case ToolType.GROUP: return 'crosshair';
       case ToolType.IMAGE: return 'crosshair';
       case ToolType.VIDEO: return 'crosshair';
+      case ToolType.CUSTOM_AGENT: return 'crosshair';
+      case ToolType.MARKDOWN: return 'text';
       default: return 'cell';
     }
   };
@@ -1105,7 +1159,7 @@ const CanvasBoard: React.FC = () => {
         <Panel position="top-left" className="ml-4 mt-4">
            <div className="bg-white/90 backdrop-blur px-4 py-2 rounded-lg border border-gray-200 shadow-sm flex items-center gap-3">
              <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold text-lg">C</div>
-             <h1 className="font-bold text-gray-800 tracking-tight">CanvasFlow 画板</h1>
+             <h1 className="font-bold text-gray-800 tracking-tight">H3C画板</h1>
            </div>
         </Panel>
 

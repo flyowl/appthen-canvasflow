@@ -20,6 +20,8 @@ export enum ToolType {
   ERASER = 'ERASER',
   IMAGE = 'IMAGE',
   VIDEO = 'VIDEO',
+  CUSTOM_AGENT = 'CUSTOM_AGENT',
+  MARKDOWN = 'MARKDOWN',
 }
 
 export type LayoutDirection = 'LR' | 'RL' | 'TB' | 'HS';
@@ -61,6 +63,8 @@ export interface NodeData {
   // For Media
   src?: string;
   objectFit?: 'contain' | 'cover' | 'fill';
+  // For Markdown
+  markdownContent?: string;
 }
 
 export type CanvasNode = Node<NodeData>;

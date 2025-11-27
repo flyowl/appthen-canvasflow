@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import { useStore } from '../store';
 import { ToolType } from '../types';
+import { useReactFlow } from 'reactflow';
 import { toPng } from 'html-to-image';
 import { 
   MousePointer2, 
@@ -20,17 +21,22 @@ import {
   Undo2,
   Redo2,
   Trash2,
-  Shapes, // Import generic Shapes icon
+  Shapes, 
   ChevronDown,
   Diamond,
   Hexagon,
-  Database, // For Cylinder
+  Database, 
   Cloud,
-  File, // For Document
-  RectangleHorizontal, // For Parallelogram (placeholder)
+  File, 
+  RectangleHorizontal, 
   Image as ImageIcon,
   Video as VideoIcon,
-  Film
+  Film,
+  Plus,
+  Bot,
+  FileText,
+  FileJson,
+  Upload
 } from 'lucide-react';
 
 // Custom small Parallelogram icon if needed, or use generic
@@ -45,8 +51,11 @@ const Toolbar: React.FC = () => {
       tool, setTool, 
       toggleLayersPanel, isLayersPanelOpen, 
       toggleAIModal, isAIModalOpen,
-      undo, redo, clearAll, history
+      undo, redo, clearAll, history,
+      setNodes, setEdges, takeSnapshot
   } = useStore();
+  const { getNodes, getEdges, getViewport, setViewport } = useReactFlow();
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleExport = () => {
     const viewport = document.querySelector('.react-flow__viewport') as HTMLElement;
@@ -71,6 +80,61 @@ const Toolbar: React.FC = () => {
         console.error('Export failed:', err);
       });
     }
+  };
+
+  const handleExportJSON = () => {
+      const data = {
+          nodes: getNodes(),
+          edges: getEdges(),
+          viewport: getViewport(),
+          timestamp: Date.now(),
+          version: '1.0'
+      };
+      
+      const jsonString = JSON.stringify(data, null, 2);
+      const blob = new Blob([jsonString], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `canvas-backup-${new Date().toISOString().slice(0,10)}.json`;
+      link.click();
+      URL.revokeObjectURL(url);
+  };
+
+  const handleImportJSON = (event: React.ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = (e) => {
+          try {
+              const content = e.target?.result as string;
+              const data = JSON.parse(content);
+
+              if (data.nodes && Array.isArray(data.nodes)) {
+                  takeSnapshot();
+                  setNodes(data.nodes);
+                  
+                  if (data.edges && Array.isArray(data.edges)) {
+                      setEdges(data.edges);
+                  } else {
+                      setEdges([]);
+                  }
+
+                  if (data.viewport) {
+                      setViewport(data.viewport);
+                  }
+              } else {
+                  alert('无效的画板数据文件');
+              }
+          } catch (error) {
+              console.error('Import failed:', error);
+              alert('无法解析文件');
+          }
+      };
+      reader.readAsText(file);
+      // Reset input to allow selecting same file again
+      if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const onDragStart = (event: React.DragEvent, nodeType: ToolType) => {
@@ -117,7 +181,7 @@ const Toolbar: React.FC = () => {
           { type: ToolType.VIDEO, icon: <Film size={18} />, label: '视频', draggable: true },
       ]
     },
-    { type: ToolType.MINDMAP, icon: <GitBranch size={18} />, label: '思维导图', draggable: true },
+    // Note: ToolType.MINDMAP and ToolType.CUSTOM_AGENT have been moved to the Plus menu
     { type: ToolType.GROUP, icon: <LayoutDashboard size={18} />, label: '分区', draggable: true },
     { type: ToolType.STICKY_NOTE, icon: <StickyNote size={18} />, label: '便签', draggable: true },
     { type: ToolType.TEXT, icon: <Type size={18} />, label: '文本', draggable: true },
@@ -128,6 +192,102 @@ const Toolbar: React.FC = () => {
 
   return (
     <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-white rounded-lg shadow-xl border border-gray-200 p-1.5 flex items-center gap-1 z-50">
+      
+      <input 
+          type="file" 
+          ref={fileInputRef} 
+          className="hidden" 
+          accept=".json" 
+          onChange={handleImportJSON} 
+      />
+
+      {/* PLUS MENU (Insert/Utils) */}
+      <div className="relative group/menu flex items-center justify-center">
+        <button
+            title="添加组件 / 工具"
+            className="p-2 rounded-md text-gray-600 hover:bg-gray-100 hover:text-gray-900 transition-all duration-200"
+        >
+            <Plus size={18} />
+        </button>
+
+        <div className="absolute top-full left-0 pt-2 hidden group-hover/menu:block z-50">
+            <div className="absolute -top-2 left-0 w-full h-4 bg-transparent" />
+            <div className="bg-white rounded-lg shadow-xl border border-gray-200 p-2 min-w-[160px] animate-in fade-in zoom-in-95 duration-200 flex flex-col gap-1">
+                <div className="text-[10px] font-bold text-gray-400 px-2 py-1 uppercase tracking-wider">组件</div>
+                
+                <button
+                    onClick={() => setTool(ToolType.MINDMAP)}
+                    draggable={true}
+                    onDragStart={(event) => onDragStart(event, ToolType.MINDMAP)}
+                    className={`flex items-center gap-2 px-2 py-1.5 rounded-md text-sm transition-colors text-left cursor-grab active:cursor-grabbing ${tool === ToolType.MINDMAP ? 'bg-blue-50 text-blue-600' : 'text-gray-700 hover:bg-gray-100'}`}
+                >
+                    <GitBranch size={16} />
+                    <span>思维导图</span>
+                </button>
+
+                <button
+                    onClick={() => setTool(ToolType.CUSTOM_AGENT)}
+                    draggable={true}
+                    onDragStart={(event) => onDragStart(event, ToolType.CUSTOM_AGENT)}
+                    className={`flex items-center gap-2 px-2 py-1.5 rounded-md text-sm transition-colors text-left cursor-grab active:cursor-grabbing ${tool === ToolType.CUSTOM_AGENT ? 'bg-blue-50 text-blue-600' : 'text-gray-700 hover:bg-gray-100'}`}
+                >
+                    <Bot size={16} />
+                    <span>自定义智能体</span>
+                </button>
+                
+                <button
+                    onClick={() => setTool(ToolType.MARKDOWN)}
+                    draggable={true}
+                    onDragStart={(event) => onDragStart(event, ToolType.MARKDOWN)}
+                    className={`flex items-center gap-2 px-2 py-1.5 rounded-md text-sm transition-colors text-left cursor-grab active:cursor-grabbing ${tool === ToolType.MARKDOWN ? 'bg-blue-50 text-blue-600' : 'text-gray-700 hover:bg-gray-100'}`}
+                >
+                    <FileText size={16} />
+                    <span>Markdown 编辑器</span>
+                </button>
+
+                <div className="h-px bg-gray-100 my-1" />
+                <div className="text-[10px] font-bold text-gray-400 px-2 py-1 uppercase tracking-wider">工具</div>
+
+                <button
+                    onClick={toggleLayersPanel}
+                    className={`flex items-center gap-2 px-2 py-1.5 rounded-md text-sm transition-colors text-left ${isLayersPanelOpen ? 'bg-blue-50 text-blue-600' : 'text-gray-700 hover:bg-gray-100'}`}
+                >
+                    <Layers size={16} />
+                    <span>{isLayersPanelOpen ? '关闭图层' : '图层面板'}</span>
+                </button>
+
+                <button
+                    onClick={handleExport}
+                    className="flex items-center gap-2 px-2 py-1.5 rounded-md text-sm text-gray-700 hover:bg-gray-100 transition-colors text-left"
+                >
+                    <Download size={16} />
+                    <span>导出图片 (PNG)</span>
+                </button>
+
+                <div className="h-px bg-gray-100 my-1" />
+                <div className="text-[10px] font-bold text-gray-400 px-2 py-1 uppercase tracking-wider">数据</div>
+
+                <button
+                    onClick={handleExportJSON}
+                    className="flex items-center gap-2 px-2 py-1.5 rounded-md text-sm text-gray-700 hover:bg-gray-100 transition-colors text-left"
+                >
+                    <FileJson size={16} />
+                    <span>导出数据 (JSON)</span>
+                </button>
+
+                <button
+                    onClick={() => fileInputRef.current?.click()}
+                    className="flex items-center gap-2 px-2 py-1.5 rounded-md text-sm text-gray-700 hover:bg-gray-100 transition-colors text-left"
+                >
+                    <Upload size={16} />
+                    <span>导入数据 (JSON)</span>
+                </button>
+            </div>
+        </div>
+      </div>
+      
+      <div className="w-px h-6 bg-gray-200 mx-1" />
+
       {tools.map((t, i) => {
         if ('separator' in t) {
             return <div key={i} className="w-px h-6 bg-gray-200 mx-1" />;
@@ -210,25 +370,7 @@ const Toolbar: React.FC = () => {
         <Sparkles size={18} />
       </button>
 
-      <button
-        onClick={toggleLayersPanel}
-        title="图层"
-        className={`p-2 rounded-md transition-all duration-200 ${
-            isLayersPanelOpen
-            ? 'bg-blue-50 text-blue-600 shadow-sm ring-1 ring-blue-100'
-            : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-        }`}
-      >
-        <Layers size={18} />
-      </button>
-
-      <button
-        onClick={handleExport}
-        title="导出 PNG"
-        className="p-2 rounded-md text-gray-600 hover:bg-gray-100 hover:text-gray-900 transition-all duration-200"
-      >
-        <Download size={18} />
-      </button>
+      {/* Layers and Export buttons have been moved to the Plus menu */}
 
       <div className="w-px h-6 bg-gray-200 mx-1" />
 
