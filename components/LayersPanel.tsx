@@ -41,6 +41,7 @@ const LayersPanel: React.FC = () => {
           [ToolType.TEXT]: '文本',
           [ToolType.PEN]: '手绘',
           [ToolType.GROUP]: '组合',
+          [ToolType.SECTION]: '分区',
           [ToolType.MINDMAP]: '思维导图',
           [ToolType.STICKY_NOTE]: '便签',
       };

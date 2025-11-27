@@ -40,7 +40,8 @@ import {
     CloudNode, 
     DocumentNode,
     DrawingNode, 
-    GroupNode, 
+    GroupNode,
+    SectionNode, // Imported
     MindMapNode, 
     StickyNoteNode, 
     ImageNode, 
@@ -62,6 +63,7 @@ const nodeTypes = {
   [ToolType.TEXT]: TextNode,
   [ToolType.PEN]: DrawingNode,
   [ToolType.GROUP]: GroupNode,
+  [ToolType.SECTION]: SectionNode, // Registered
   [ToolType.MINDMAP]: MindMapNode,
   [ToolType.STICKY_NOTE]: StickyNoteNode,
   [ToolType.IMAGE]: ImageNode,
@@ -269,8 +271,8 @@ const CanvasBoard: React.FC = () => {
       const centerX = absX + width / 2;
       const centerY = absY + height / 2;
 
-      // Filter for groups that are NOT the node itself
-      const groups = allNodes.filter(n => n.type === ToolType.GROUP && n.id !== node.id);
+      // Filter for groups OR SECTIONS that are NOT the node itself
+      const groups = allNodes.filter(n => (n.type === ToolType.GROUP || n.type === ToolType.SECTION) && n.id !== node.id);
 
       // Check intersections (reverse order to hit top-most group first)
       for (let i = groups.length - 1; i >= 0; i--) {
@@ -331,7 +333,7 @@ const CanvasBoard: React.FC = () => {
       });
 
       setNodes((currentNodes) => currentNodes.map(n => {
-          if (n.type === ToolType.GROUP) {
+          if (n.type === ToolType.GROUP || n.type === ToolType.SECTION) {
               const shouldHighlight = groupsToHighlight.has(n.id);
               if (n.data.isHighlight !== shouldHighlight) {
                   return { ...n, data: { ...n.data, isHighlight: shouldHighlight } };
@@ -344,7 +346,7 @@ const CanvasBoard: React.FC = () => {
   const onNodeDragStop: NodeDragHandler = useCallback(
     (event, node, draggedNodes) => {
         // Reset all group highlights
-        setNodes(nds => nds.map(n => n.type === ToolType.GROUP ? { ...n, data: { ...n.data, isHighlight: false } } : n));
+        setNodes(nds => nds.map(n => (n.type === ToolType.GROUP || n.type === ToolType.SECTION) ? { ...n, data: { ...n.data, isHighlight: false } } : n));
 
         // Get fresh layout data
         const nodesWithLayout = getNodes();
@@ -519,7 +521,7 @@ const CanvasBoard: React.FC = () => {
       switch(action) {
           case 'delete':
               const nodesToDeleteIds = [...selectedNodes];
-              const groupsToDelete = selectedNodeObjs.filter(n => n.type === ToolType.GROUP);
+              const groupsToDelete = selectedNodeObjs.filter(n => n.type === ToolType.GROUP || n.type === ToolType.SECTION);
               if (groupsToDelete.length > 0) {
                   const allNodes = getNodes();
                   groupsToDelete.forEach(g => {
@@ -633,8 +635,7 @@ const CanvasBoard: React.FC = () => {
                       maxY = Math.max(maxY, n.position.y + h);
                   });
                   
-                  // Changed padding to 0 as requested ("不要配置外边距")
-                  const padding = 0;
+                  const padding = 20; // Re-introduced padding for better group visualization
                   const width = maxX - minX + (padding * 2);
                   const height = maxY - minY + (padding * 2);
                   const groupX = minX - padding;
@@ -644,16 +645,16 @@ const CanvasBoard: React.FC = () => {
 
                   const groupNode: Node<NodeData> = {
                       id: groupId,
-                      type: ToolType.GROUP,
+                      type: ToolType.GROUP, // Logical grouping
                       position: { x: groupX, y: groupY },
                       style: { width, height },
                       data: { 
                           ...defaultStyle, 
-                          label: '', // Empty label acts as invisible wrapper (logical group)
+                          label: '', 
                           align: 'left',
                           verticalAlign: 'top',
-                          backgroundColor: 'transparent', // Transparent background
-                          borderColor: 'transparent', // Transparent border
+                          backgroundColor: 'transparent', 
+                          borderColor: 'transparent',
                           borderWidth: 0
                       },
                   };
@@ -678,7 +679,7 @@ const CanvasBoard: React.FC = () => {
               break;
 
           case 'ungroup':
-              const groups = selectedNodeObjs.filter(n => n.type === ToolType.GROUP);
+              const groups = selectedNodeObjs.filter(n => n.type === ToolType.GROUP || n.type === ToolType.SECTION);
               if (groups.length > 0) {
                   const groupIds = groups.map(g => g.id);
                   const children = getNodes().filter(n => groupIds.includes(n.parentNode || ''));
@@ -774,7 +775,7 @@ const CanvasBoard: React.FC = () => {
       takeSnapshot(); 
 
       const specificStyles = getShapeStyles(type);
-      const isLarge = type === ToolType.GROUP || type === ToolType.VIDEO || type === ToolType.CUSTOM_AGENT || type === ToolType.MARKDOWN;
+      const isLarge = type === ToolType.SECTION || type === ToolType.VIDEO || type === ToolType.CUSTOM_AGENT || type === ToolType.MARKDOWN;
 
       const newNode: Node<NodeData> = {
         id: `${type}-${Date.now()}`,
@@ -782,7 +783,7 @@ const CanvasBoard: React.FC = () => {
         position,
         data: {
           label: type === ToolType.TEXT ? '双击编辑' : (
-              type === ToolType.GROUP ? '分区' : (
+              type === ToolType.SECTION ? '分区' : (
                 type === ToolType.STICKY_NOTE ? '添加文本' : (
                   type === ToolType.CUSTOM_AGENT ? '写一个小红书文案 桌子' : (
                     type === ToolType.MARKDOWN ? 'Markdown Editor' : '形状'
@@ -792,11 +793,10 @@ const CanvasBoard: React.FC = () => {
           ),
           ...defaultStyle,
           ...specificStyles,
-          ...(type === ToolType.GROUP ? {
-              // Partition Default Style
+          ...(type === ToolType.SECTION ? {
               align: 'left',
               verticalAlign: 'top',
-              backgroundColor: 'rgba(203, 213, 225, 0.4)', 
+              backgroundColor: 'rgba(241, 245, 249, 0.5)', 
               borderColor: 'transparent',
               borderWidth: 0
           } : {}),
@@ -821,7 +821,9 @@ const CanvasBoard: React.FC = () => {
              backgroundColor: '#ffffff',
              borderColor: '#e2e8f0',
              borderWidth: 1,
-             markdownContent: '# Markdown Editor\n\nStart typing...'
+             height: 400,
+             width: 150,
+             markdownContent: '请编写内容...'
            } : {}),
           ...(type === ToolType.MINDMAP ? {
              mindMapRoot: {
@@ -840,7 +842,12 @@ const CanvasBoard: React.FC = () => {
         }
       };
 
-      setNodes((nds) => nds.concat(newNode));
+      // SECTIONs should be added at the beginning of the array to render at the bottom (Z-index 0)
+      if (type === ToolType.SECTION) {
+          setNodes((nds) => [newNode, ...nds]);
+      } else {
+          setNodes((nds) => nds.concat(newNode));
+      }
       setTool(ToolType.SELECT);
     },
     [project, screenToFlowPosition, setNodes, setTool, defaultStyle, takeSnapshot]
@@ -873,7 +880,7 @@ const CanvasBoard: React.FC = () => {
         takeSnapshot(); // Snapshot on new element click create
 
         const specificStyles = getShapeStyles(tool);
-        const isLarge = tool === ToolType.GROUP || tool === ToolType.VIDEO || tool === ToolType.CUSTOM_AGENT || tool === ToolType.MARKDOWN;
+        const isLarge = tool === ToolType.SECTION || tool === ToolType.VIDEO || tool === ToolType.CUSTOM_AGENT || tool === ToolType.MARKDOWN;
 
         const newNode: Node<NodeData> = {
           id: `${tool}-${Date.now()}`,
@@ -881,7 +888,7 @@ const CanvasBoard: React.FC = () => {
           position,
           data: {
             label: tool === ToolType.TEXT ? '双击编辑' : (
-                tool === ToolType.GROUP ? '分区' : (
+                tool === ToolType.SECTION ? '分区' : (
                     tool === ToolType.STICKY_NOTE ? '添加文本' : (
                          tool === ToolType.CUSTOM_AGENT ? '写一个小红书文案 桌子' : (
                             tool === ToolType.MARKDOWN ? 'Markdown Editor' : '形状'
@@ -891,11 +898,10 @@ const CanvasBoard: React.FC = () => {
             ),
             ...defaultStyle,
             ...specificStyles,
-            ...(tool === ToolType.GROUP ? {
-              // Partition Default Style
+            ...(tool === ToolType.SECTION ? {
               align: 'left',
               verticalAlign: 'top',
-              backgroundColor: 'rgba(203, 213, 225, 0.4)', 
+              backgroundColor: 'rgba(241, 245, 249, 0.5)', 
               borderColor: 'transparent',
               borderWidth: 0
             } : {}),
@@ -919,8 +925,10 @@ const CanvasBoard: React.FC = () => {
             ...(tool === ToolType.MARKDOWN ? {
                 backgroundColor: '#ffffff',
                 borderColor: '#e2e8f0',
+                height: 400,
+                width: 150,
                 borderWidth: 1,
-                markdownContent: '# Markdown Editor\n\nStart typing...'
+                markdownContent: '请编写内容...'
             } : {}),
             ...(tool === ToolType.MINDMAP ? {
                 mindMapRoot: {
@@ -939,7 +947,12 @@ const CanvasBoard: React.FC = () => {
         }
       };
 
-      setNodes((nds) => nds.concat(newNode));
+      // SECTIONs should be added at the beginning of the array to render at the bottom (Z-index 0)
+      if (tool === ToolType.SECTION) {
+        setNodes((nds) => [newNode, ...nds]);
+      } else {
+        setNodes((nds) => nds.concat(newNode));
+      }
       setTool(ToolType.SELECT);
     }
     },
@@ -1088,7 +1101,7 @@ const CanvasBoard: React.FC = () => {
       case ToolType.PEN: return 'crosshair';
       case ToolType.ERASER: return 'crosshair';
       case ToolType.SELECT: return 'default';
-      case ToolType.GROUP: return 'crosshair';
+      case ToolType.SECTION: return 'crosshair';
       case ToolType.IMAGE: return 'crosshair';
       case ToolType.VIDEO: return 'crosshair';
       case ToolType.CUSTOM_AGENT: return 'crosshair';
@@ -1097,7 +1110,10 @@ const CanvasBoard: React.FC = () => {
     }
   };
 
-  const isGroupSelected = selectedNodes.length === 1 && getNodes().find(n => n.id === selectedNodes[0])?.type === ToolType.GROUP;
+  const isGroupSelected = selectedNodes.length === 1 && (
+      getNodes().find(n => n.id === selectedNodes[0])?.type === ToolType.GROUP || 
+      getNodes().find(n => n.id === selectedNodes[0])?.type === ToolType.SECTION
+  );
 
   const panOnDrag = tool === ToolType.HAND || (tool === ToolType.SELECT && isSpacePressed);
   const selectionOnDrag = tool === ToolType.SELECT && !isSpacePressed;

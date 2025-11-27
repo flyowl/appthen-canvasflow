@@ -182,7 +182,7 @@ const Toolbar: React.FC = () => {
       ]
     },
     // Note: ToolType.MINDMAP and ToolType.CUSTOM_AGENT have been moved to the Plus menu
-    { type: ToolType.GROUP, icon: <LayoutDashboard size={18} />, label: '分区', draggable: true },
+    { type: ToolType.SECTION, icon: <LayoutDashboard size={18} />, label: '分区', draggable: true },
     { type: ToolType.STICKY_NOTE, icon: <StickyNote size={18} />, label: '便签', draggable: true },
     { type: ToolType.TEXT, icon: <Type size={18} />, label: '文本', draggable: true },
   ];

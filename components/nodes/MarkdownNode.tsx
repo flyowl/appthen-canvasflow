@@ -29,7 +29,7 @@ export const MarkdownNode = memo(({ id, data, selected, isConnectable }: NodePro
     onUpdate: ({ editor }) => {
       if (isUpdatingFromProps.current) return;
       
-      const markdown = editor.storage.markdown.getMarkdown();
+      const markdown = (editor.storage as any).markdown.getMarkdown();
       
       // Update store without triggering re-render of this component if possible
       // But we need to update the node data for persistence
@@ -55,7 +55,7 @@ export const MarkdownNode = memo(({ id, data, selected, isConnectable }: NodePro
   // Sync data updates (e.g. from undo/redo) back to editor
   useEffect(() => {
     if (editor && data.markdownContent !== undefined) {
-       const currentContent = editor.storage.markdown.getMarkdown();
+       const currentContent = (editor.storage as any).markdown.getMarkdown();
        if (currentContent !== data.markdownContent) {
            isUpdatingFromProps.current = true;
            editor.commands.setContent(data.markdownContent);

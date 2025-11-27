@@ -6,6 +6,7 @@ export * from './ShapeNodes';
 export * from './TextNode';
 export * from './DrawingNode';
 export * from './GroupNode';
+export * from './SectionNode'; // New Export
 export * from './StickyNoteNode';
 export * from './MindMapNode';
 export * from './MediaNodes';

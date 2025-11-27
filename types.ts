@@ -15,7 +15,8 @@ export enum ToolType {
   STICKY_NOTE = 'STICKY_NOTE',
   HAND = 'HAND',
   PEN = 'PEN',
-  GROUP = 'GROUP',
+  GROUP = 'GROUP',     // For logical combinations (Ctrl+G)
+  SECTION = 'SECTION', // For visual partitions
   MINDMAP = 'MINDMAP',
   ERASER = 'ERASER',
   IMAGE = 'IMAGE',
@@ -54,7 +55,7 @@ export interface NodeData {
   isEditing?: boolean;
   // For Drawing Node
   path?: string;
-  // For Group Node drag interaction
+  // For Group/Section interaction
   isHighlight?: boolean;
   // For Mind Map
   mindMapRoot?: MindMapItem;

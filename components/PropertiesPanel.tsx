@@ -544,7 +544,8 @@ const PropertiesPanel: React.FC = () => {
             case 'DOCUMENT': return '文档';
             case 'TEXT': return '文本';
             case 'PEN': return '手绘';
-            case 'GROUP': return '分区/组合';
+            case 'GROUP': return '组合'; // Logical
+            case 'SECTION': return '分区'; // Visual
             case 'STICKY_NOTE': return '便签';
             case 'IMAGE': return '图片';
             case 'VIDEO': return '视频';
@@ -552,7 +553,7 @@ const PropertiesPanel: React.FC = () => {
         }
     }
 
-    const supportsBorderRadius = [ToolType.RECTANGLE, ToolType.GROUP, ToolType.STICKY_NOTE].includes(activeNode.type);
+    const supportsBorderRadius = [ToolType.RECTANGLE, ToolType.GROUP, ToolType.SECTION, ToolType.STICKY_NOTE].includes(activeNode.type);
     const isMedia = [ToolType.IMAGE, ToolType.VIDEO].includes(activeNode.type);
     const isImage = activeNode.type === ToolType.IMAGE;
     const isVideo = activeNode.type === ToolType.VIDEO;
