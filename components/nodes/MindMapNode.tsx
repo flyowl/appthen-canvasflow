@@ -1,5 +1,5 @@
 import React, { memo, useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { Handle, Position, NodeProps } from 'reactflow';
+import { Handle, Position, NodeProps, useUpdateNodeInternals } from 'reactflow';
 import { NodeData, MindMapItem, LayoutDirection } from '../../types';
 import { AlignLeft, AlignRight, ArrowDown, Split, Trash2 } from 'lucide-react';
 import { useStore } from '../../store';
@@ -247,9 +247,28 @@ const calculateMindMapLayout = (
     return { nodes, bounds: { minX, maxX, minY, maxY } };
 };
 
-export const MindMapNode = memo(({ id, data, selected }: NodeProps<NodeData>) => {
-    // Replaced useReactFlow().setNodes with useStore setNodes
+// Custom Handle Component for Mind Map Sub-Nodes
+// Features: Invisible by default, appears on node hover, highlights/scales on handle hover
+const SubNodeHandle = ({ id, position, style, isConnectable }: { id: string, position: Position, style?: React.CSSProperties, isConnectable?: boolean }) => (
+    <Handle
+        type="source"
+        position={position}
+        id={id}
+        isConnectable={isConnectable}
+        className="!w-4 !h-4 !bg-transparent !border-none group/handle flex items-center justify-center"
+        style={{ 
+            zIndex: 150, 
+            ...style 
+        }}
+    >
+        <div className="w-2.5 h-2.5 bg-white border-[1.5px] border-blue-500 rounded-full opacity-0 group-hover:opacity-100 group-hover/handle:opacity-100 group-hover/handle:scale-125 group-hover/handle:bg-blue-600 transition-all duration-200 shadow-sm" />
+    </Handle>
+);
+
+export const MindMapNode = memo(({ id, data, selected, isConnectable }: NodeProps<NodeData>) => {
     const setNodes = useStore((state) => state.setNodes);
+    // Crucial: Update React Flow internals when layout changes so it recognizes new handles
+    const updateNodeInternals = useUpdateNodeInternals();
     
     const [activeId, setActiveId] = useState<string | null>(null);
     const [editingId, setEditingId] = useState<string | null>(null);
@@ -264,6 +283,11 @@ export const MindMapNode = memo(({ id, data, selected }: NodeProps<NodeData>) =>
     const { nodes, bounds } = useMemo(() => {
         return calculateMindMapLayout(rootItem, direction);
     }, [rootItem, direction]);
+
+    // Force React Flow to re-measure handles whenever the node structure (nodes list) changes
+    useEffect(() => {
+        updateNodeInternals(id);
+    }, [id, nodes, updateNodeInternals]);
 
     const findItem = useCallback((itemId: string, current: MindMapItem, parent: MindMapItem | null = null): { item: MindMapItem, parent: MindMapItem | null } | null => {
         if (current.id === itemId) return { item: current, parent };
@@ -733,7 +757,7 @@ export const MindMapNode = memo(({ id, data, selected }: NodeProps<NodeData>) =>
                      return (
                         <div
                             key={node.id}
-                            className="absolute"
+                            className="absolute group"
                             style={{ 
                                 left: absX, 
                                 top: absY, 
@@ -787,40 +811,16 @@ export const MindMapNode = memo(({ id, data, selected }: NodeProps<NodeData>) =>
                                 )}
                             </div>
 
-                            <Handle 
-                                id={`handle-top-${node.id}`} 
-                                type="source" 
-                                position={Position.Top} 
-                                className="w-2 h-2 opacity-0 group-hover:opacity-100 bg-blue-400" 
-                                style={{ zIndex: 50, top: -2 }}
-                            />
-                            <Handle 
-                                id={`handle-bottom-${node.id}`} 
-                                type="source" 
-                                position={Position.Bottom} 
-                                className="w-2 h-2 opacity-0 group-hover:opacity-100 bg-blue-400" 
-                                style={{ zIndex: 50, bottom: -2 }}
-                            />
-                            <Handle 
-                                id={`handle-left-${node.id}`} 
-                                type="source" 
-                                position={Position.Left} 
-                                className="w-2 h-2 opacity-0 group-hover:opacity-100 bg-blue-400" 
-                                style={{ zIndex: 50, left: -2 }}
-                            />
-                            <Handle 
-                                id={`handle-right-${node.id}`} 
-                                type="source" 
-                                position={Position.Right} 
-                                className="w-2 h-2 opacity-0 group-hover:opacity-100 bg-blue-400" 
-                                style={{ zIndex: 50, right: -2 }}
-                            />
+                            <SubNodeHandle id={`h-t-${node.id}`} position={Position.Top} style={{ top: -8 }} isConnectable={isConnectable} />
+                            <SubNodeHandle id={`h-b-${node.id}`} position={Position.Bottom} style={{ bottom: -8, top: 'auto' }} isConnectable={isConnectable} />
+                            <SubNodeHandle id={`h-l-${node.id}`} position={Position.Left} style={{ left: -8 }} isConnectable={isConnectable} />
+                            <SubNodeHandle id={`h-r-${node.id}`} position={Position.Right} style={{ right: -8, left: 'auto' }} isConnectable={isConnectable} />
                         </div>
                      )
                  })}
 
-                <CustomHandle type="target" position={Position.Left} id="main-left" selected={selected} />
-                <CustomHandle type="source" position={Position.Right} id="main-right" selected={selected} />
+                <CustomHandle type="target" position={Position.Left} id="main-left" selected={selected} isConnectable={isConnectable} />
+                <CustomHandle type="source" position={Position.Right} id="main-right" selected={selected} isConnectable={isConnectable} />
              </div>
              
              {selected && (

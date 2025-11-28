@@ -271,8 +271,8 @@ const CanvasBoard: React.FC = () => {
       const centerX = absX + width / 2;
       const centerY = absY + height / 2;
 
-      // Filter for groups OR SECTIONS that are NOT the node itself
-      const groups = allNodes.filter(n => (n.type === ToolType.GROUP || n.type === ToolType.SECTION) && n.id !== node.id);
+      // Filter for SECTIONS ONLY (Partition feature). Exclude logical Groups from drop-to-parent.
+      const groups = allNodes.filter(n => n.type === ToolType.SECTION && n.id !== node.id);
 
       // Check intersections (reverse order to hit top-most group first)
       for (let i = groups.length - 1; i >= 0; i--) {
@@ -300,7 +300,7 @@ const CanvasBoard: React.FC = () => {
       // Determine which nodes we are actively dragging
       // When dragging a selection, draggedNodes contains all of them.
       const nodesToCheck = draggedNodes && draggedNodes.length > 0 ? draggedNodes : [node];
-      const groupsToHighlight = new Set<string>();
+      const sectionsToHighlight = new Set<string>();
 
       nodesToCheck.forEach(draggedNode => {
           let absX = draggedNode.positionAbsolute?.x;
@@ -328,13 +328,13 @@ const CanvasBoard: React.FC = () => {
           const targetGroup = findTargetGroup(draggedNode, allNodes, { x: absX!, y: absY! });
           
           if (targetGroup && !isDescendant(targetGroup.id, draggedNode.id, allNodes)) {
-              groupsToHighlight.add(targetGroup.id);
+              sectionsToHighlight.add(targetGroup.id);
           }
       });
 
       setNodes((currentNodes) => currentNodes.map(n => {
-          if (n.type === ToolType.GROUP || n.type === ToolType.SECTION) {
-              const shouldHighlight = groupsToHighlight.has(n.id);
+          if (n.type === ToolType.SECTION) {
+              const shouldHighlight = sectionsToHighlight.has(n.id);
               if (n.data.isHighlight !== shouldHighlight) {
                   return { ...n, data: { ...n.data, isHighlight: shouldHighlight } };
               }
@@ -345,8 +345,8 @@ const CanvasBoard: React.FC = () => {
 
   const onNodeDragStop: NodeDragHandler = useCallback(
     (event, node, draggedNodes) => {
-        // Reset all group highlights
-        setNodes(nds => nds.map(n => (n.type === ToolType.GROUP || n.type === ToolType.SECTION) ? { ...n, data: { ...n.data, isHighlight: false } } : n));
+        // Reset all section highlights
+        setNodes(nds => nds.map(n => n.type === ToolType.SECTION ? { ...n, data: { ...n.data, isHighlight: false } } : n));
 
         // Get fresh layout data
         const nodesWithLayout = getNodes();
@@ -388,8 +388,7 @@ const CanvasBoard: React.FC = () => {
                 const width = (draggedNode as any).measured?.width ?? draggedNode.width ?? currentNodeState.width ?? currentNodeState.style?.width ?? 150;
                 const height = (draggedNode as any).measured?.height ?? draggedNode.height ?? currentNodeState.height ?? currentNodeState.style?.height ?? 50;
 
-                // 2. Check for intersection with a Group
-                // We construct a temp object for the checker with the correct Absolute Position
+                // 2. Check for intersection with a SECTION
                 const checkNode = {
                     ...draggedNode,
                     id: draggedNode.id,
@@ -399,6 +398,7 @@ const CanvasBoard: React.FC = () => {
                     position: { x: absX!, y: absY! }
                 };
 
+                // Filter explicitly searches only for SECTION
                 let targetGroup = findTargetGroup(checkNode, nodesWithLayout, { x: absX!, y: absY! });
                 
                 // Prevent circular referencing
@@ -408,7 +408,7 @@ const CanvasBoard: React.FC = () => {
 
                 // 3. Update Parent and Position logic
                 if (targetGroup) {
-                    // Moving INTO a group
+                    // Moving INTO a Section
                     if (currentNodeState.parentNode !== targetGroup.id) {
                         const groupAbsX = targetGroup.positionAbsolute?.x ?? targetGroup.position.x;
                         const groupAbsY = targetGroup.positionAbsolute?.y ?? targetGroup.position.y;
@@ -430,23 +430,29 @@ const CanvasBoard: React.FC = () => {
                         if (idx !== -1) updatedNodesList[idx] = newNode;
                     }
                 } else {
-                    // Moving OUT of a group (or staying out)
+                    // Moving OUT...
                     if (currentNodeState.parentNode) {
-                        const newNode = {
-                            ...currentNodeState,
-                            parentNode: undefined,
-                            extent: undefined,
-                            position: {
-                                x: absX!,
-                                y: absY!
-                            },
-                             width: currentNodeState.width,
-                             height: currentNodeState.height,
-                             style: currentNodeState.style
-                        };
-                        const idx = updatedNodesList.findIndex(n => n.id === newNode.id);
-                        if (idx !== -1) {
-                            updatedNodesList[idx] = newNode;
+                        const parentNode = nodesWithLayout.find(n => n.id === currentNodeState.parentNode);
+                        
+                        // Only detach automatically if the parent was a SECTION. 
+                        // If parent was a GROUP (Logical combination), do not detach on drag.
+                        if (!parentNode || parentNode.type === ToolType.SECTION) {
+                            const newNode = {
+                                ...currentNodeState,
+                                parentNode: undefined,
+                                extent: undefined,
+                                position: {
+                                    x: absX!,
+                                    y: absY!
+                                },
+                                width: currentNodeState.width,
+                                height: currentNodeState.height,
+                                style: currentNodeState.style
+                            };
+                            const idx = updatedNodesList.findIndex(n => n.id === newNode.id);
+                            if (idx !== -1) {
+                                updatedNodesList[idx] = newNode;
+                            }
                         }
                     }
                 }
@@ -635,7 +641,7 @@ const CanvasBoard: React.FC = () => {
                       maxY = Math.max(maxY, n.position.y + h);
                   });
                   
-                  const padding = 20; // Re-introduced padding for better group visualization
+                  const padding = 20; 
                   const width = maxX - minX + (padding * 2);
                   const height = maxY - minY + (padding * 2);
                   const groupX = minX - padding;
@@ -821,8 +827,8 @@ const CanvasBoard: React.FC = () => {
              backgroundColor: '#ffffff',
              borderColor: '#e2e8f0',
              borderWidth: 1,
-             height: 400,
              width: 150,
+             height: 400,
              markdownContent: '请编写内容...'
            } : {}),
           ...(type === ToolType.MINDMAP ? {
@@ -925,9 +931,9 @@ const CanvasBoard: React.FC = () => {
             ...(tool === ToolType.MARKDOWN ? {
                 backgroundColor: '#ffffff',
                 borderColor: '#e2e8f0',
-                height: 400,
-                width: 150,
                 borderWidth: 1,
+                width: 150,
+                height: 400,
                 markdownContent: '请编写内容...'
             } : {}),
             ...(tool === ToolType.MINDMAP ? {

@@ -1,9 +1,116 @@
 import React, { useState, useRef } from 'react';
 import { useStore } from '../store';
 import { useReactFlow, Node, Edge } from 'reactflow';
-import { X, Sparkles, Loader2, Play, GitBranch, LayoutDashboard, Image as ImageIcon, Trash2 } from 'lucide-react';
-import { GoogleGenAI, Type, Schema } from "@google/genai";
-import { ToolType, NodeData } from '../types';
+import { X, Sparkles, Loader2, GitBranch, LayoutDashboard, Image as ImageIcon, Trash2 } from 'lucide-react';
+import { GoogleGenAI } from "@google/genai";
+import { ToolType, NodeData, MindMapItem } from '../types';
+
+// Robust helper to extract complete JSON objects from a streaming string
+const extractArrayObjects = (text: string, key: string) => {
+    const objects: any[] = [];
+    // Regex to find the start of the array: "key": [ or 'key': [ or key: [
+    const keyPattern = `["']?${key}["']?\\s*:\\s*\\[`;
+    const match = text.match(new RegExp(keyPattern));
+    
+    if (!match) return objects;
+    
+    let startIndex = match.index! + match[0].length;
+    let braceCount = 0;
+    let inString = false;
+    let escape = false;
+    let currentObjStart = -1;
+
+    for (let i = startIndex; i < text.length; i++) {
+        const char = text[i];
+        
+        if (escape) {
+            escape = false;
+            continue;
+        }
+        
+        if (char === '\\') {
+            escape = true;
+            continue;
+        }
+
+        if (char === '"') {
+            inString = !inString;
+            continue;
+        }
+
+        if (!inString) {
+            if (char === '{') {
+                if (braceCount === 0) currentObjStart = i;
+                braceCount++;
+            } else if (char === '}') {
+                braceCount--;
+                if (braceCount === 0 && currentObjStart !== -1) {
+                    const jsonStr = text.substring(currentObjStart, i + 1);
+                    try {
+                        // Attempt to fix common LLM JSON issues like trailing commas
+                        const cleanJson = jsonStr.replace(/,\s*}/g, '}');
+                        const parsed = JSON.parse(cleanJson);
+                        objects.push(parsed);
+                    } catch (e) {
+                        // Ignore malformed partials until they are complete/valid
+                    }
+                    currentObjStart = -1;
+                }
+            } else if (char === ']') {
+                 // End of the target array
+                 if (braceCount === 0) break; 
+            }
+        }
+    }
+    return objects;
+};
+
+// Reconstruct Mind Map Tree from Flat List
+const buildMindMapTree = (flatNodes: any[]): MindMapItem | null => {
+    if (flatNodes.length === 0) return null;
+    
+    const nodeMap = new Map<string, MindMapItem>();
+    let root: MindMapItem | null = null;
+
+    // 1. Initialize all nodes
+    flatNodes.forEach(n => {
+        // Fallback for missing IDs or Labels
+        const safeId = n.id || `temp-${Math.random()}`;
+        const safeLabel = n.label || 'Node';
+        
+        nodeMap.set(safeId, {
+            id: safeId,
+            label: safeLabel,
+            children: [],
+            style: {
+                backgroundColor: n.backgroundColor,
+                textColor: n.textColor,
+                fontSize: n.fontSize
+            }
+        });
+    });
+
+    // 2. Build Hierarchy
+    flatNodes.forEach(n => {
+        const item = nodeMap.get(n.id);
+        if (!item) return;
+
+        if (n.parentId && nodeMap.has(n.parentId)) {
+            const parent = nodeMap.get(n.parentId);
+            parent?.children.push(item);
+        } else if (!n.parentId || n.parentId === 'root' || n.isRoot) {
+            // Assume first node without valid parent or explicit root is Root
+            if (!root) root = item;
+        }
+    });
+
+    // Fallback if no explicit root found but nodes exist (e.g. streaming start)
+    if (!root && flatNodes.length > 0) {
+        root = nodeMap.get(flatNodes[0].id) || null;
+    }
+
+    return root;
+};
 
 const AIGenerator: React.FC = () => {
   const { isAIModalOpen, toggleAIModal, defaultStyle, setNodes, setEdges, takeSnapshot } = useStore();
@@ -24,7 +131,6 @@ const AIGenerator: React.FC = () => {
       const reader = new FileReader();
       reader.onloadend = () => {
         const result = reader.result as string;
-        // Extract base64 part
         const base64 = result.split(',')[1];
         setSelectedImage(base64);
         setImageMimeType(file.type);
@@ -46,25 +152,26 @@ const AIGenerator: React.FC = () => {
 
     setIsLoading(true);
     setError(null);
-    
-    // Save state before generating
     takeSnapshot();
 
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       
+      // Context Awareness: Calculate optimized starting position
       const existingNodes = getNodes();
       let startX = 100;
       let startY = 100;
       
       if (existingNodes.length > 0) {
-         const maxX = Math.max(...existingNodes.map(n => n.position.x + (n.width || 150)));
-         startX = maxX + 100;
+         // Find the right-most node to append new content after
+         const getWidth = (n: Node) => Number(n.width ?? n.style?.width ?? 150) || 150;
+         const maxX = Math.max(...existingNodes.map(n => n.position.x + getWidth(n)));
+         const minY = Math.min(...existingNodes.map(n => n.position.y));
+         startX = maxX + 100; // Add generous buffer
+         startY = minY > 0 ? minY : 100;
       }
 
-      // Construct content parts
       const parts: any[] = [];
-      
       if (selectedImage) {
           parts.push({
               inlineData: {
@@ -74,197 +181,204 @@ const AIGenerator: React.FC = () => {
           });
       }
 
+      const timestamp = Date.now();
+
       if (mode === 'general') {
-        const instructions = `Create a node-based diagram based on the user request.
-          The available node types are: RECTANGLE, CIRCLE, TRIANGLE, TEXT.
-          - Use RECTANGLE for processes, services, entities, or generic blocks.
-          - Use CIRCLE for start/end points, interfaces, or users.
-          - Use TRIANGLE for decisions or gateways.
-          
-          Guidelines:
-          - Generate a logical layout with X and Y coordinates. Assume the top-left is (0,0).
-          - Spacing between nodes should be sufficient (at least 200px horizontally or 150px vertically).
-          - Provide a short, descriptive label for each node.
-          - Connect related nodes with edges.
-          - Suggest a background color for nodes if relevant (e.g., different colors for different layers), otherwise default to white.
-          `;
+        // --- GENERAL FLOWCHART STREAMING ---
+        // Strategy: Request a SINGLE array of mixed items (nodes/edges) to allow continuous streaming
+        // regardless of generation order.
+        const instructions = `You are a UI/UX expert.
+        
+        **Supported Shapes**:
+        - RECTANGLE (Process), CIRCLE (Start/End), DIAMOND (Decision)
+        - CYLINDER (Database), CLOUD (Network), DOCUMENT (File)
+        - PARALLELOGRAM (I/O), HEXAGON (Prep), STICKY_NOTE (Note)
+        
+        **Styling Rules**:
+        - Use modern **PASTEL** colors (e.g., #EFF6FF, #FEF3C7, #F0FDF4).
+        - Contrast border/text colors (e.g., #1E40AF for blue bg).
+        
+        **Layout Context**:
+        - Start generating nodes near x=${startX}, y=${startY}.
+        - Arrange nodes logically.
+        
+        **Output Format**:
+        Return a JSON object with a SINGLE array named "elements".
+        The array contains both Node objects and Edge objects.
+        
+        Item Schema (Node):
+        { "category": "node", "id": "...", "type": "...", "label": "...", "x": 100, "y": 100, "width": 150, "height": 80, "backgroundColor": "...", "borderColor": "...", "textColor": "..." }
+        
+        Item Schema (Edge):
+        { "category": "edge", "source": "...", "target": "...", "label": "..." }
+
+        NO Markdown blocks. JSON ONLY.
+        `;
         
         parts.push({
-            text: `${instructions}\n\nUser Request: "${prompt || (selectedImage ? 'Analyze the image and generate a diagram structure.' : '')}"`
+            text: `${instructions}\n\nUser Request: "${prompt}"`
         });
 
-        const response = await ai.models.generateContent({
+        const result = await ai.models.generateContentStream({
           model: 'gemini-2.5-flash',
           contents: { parts: parts },
-          config: {
-            responseMimeType: "application/json",
-            responseSchema: {
-              type: Type.OBJECT,
-              properties: {
-                nodes: {
-                  type: Type.ARRAY,
-                  items: {
-                    type: Type.OBJECT,
-                    properties: {
-                      id: { type: Type.STRING, description: "Unique ID for the node (e.g., '1', '2')" },
-                      type: { type: Type.STRING, description: "One of: RECTANGLE, CIRCLE, TRIANGLE, TEXT" },
-                      label: { type: Type.STRING },
-                      x: { type: Type.NUMBER },
-                      y: { type: Type.NUMBER },
-                      width: { type: Type.NUMBER, description: "Default around 150" },
-                      height: { type: Type.NUMBER, description: "Default around 80" },
-                      backgroundColor: { type: Type.STRING, description: "Hex color code" },
-                      textColor: { type: Type.STRING, description: "Hex color code, usually black or white" }
-                    }
-                  }
-                },
-                edges: {
-                  type: Type.ARRAY,
-                  items: {
-                    type: Type.OBJECT,
-                    properties: {
-                      source: { type: Type.STRING, description: "ID of the source node" },
-                      target: { type: Type.STRING, description: "ID of the target node" },
-                      label: { type: Type.STRING, description: "Optional label for the connection" }
-                    }
-                  }
-                }
-              }
-            }
-          }
+          config: { responseMimeType: "application/json" }
         });
 
-        const data = JSON.parse(response.text || '{}');
-        
-        if (!data.nodes || !Array.isArray(data.nodes)) {
-          throw new Error("Invalid response format from AI");
+        let fullText = '';
+        const processedIds = new Set<string>();
+
+        for await (const chunk of result) {
+            fullText += chunk.text || '';
+
+            // Extract from the single 'elements' stream
+            const foundElements = extractArrayObjects(fullText, 'elements');
+            
+            const newNodesToAdd: Node[] = [];
+            const newEdgesToAdd: Edge[] = [];
+
+            foundElements.forEach((el: any) => {
+                // Determine ID based on content to be stable but unique per generation
+                const rawId = el.id || `${el.source}-${el.target}`;
+                const uniqueId = `ai-${timestamp}-${rawId}`;
+
+                if (!processedIds.has(uniqueId)) {
+                    processedIds.add(uniqueId);
+                    
+                    if (el.category === 'node') {
+                        newNodesToAdd.push({
+                            id: uniqueId,
+                            type: el.type || ToolType.RECTANGLE,
+                            position: { x: el.x || startX, y: el.y || startY },
+                            style: { width: el.width || 150, height: el.height || 80 },
+                            data: {
+                                ...defaultStyle,
+                                label: el.label,
+                                backgroundColor: el.backgroundColor || defaultStyle.backgroundColor,
+                                borderColor: el.borderColor || defaultStyle.borderColor,
+                                textColor: el.textColor || defaultStyle.textColor,
+                                width: el.width || 150,
+                                height: el.height || 80,
+                                align: 'center',
+                                verticalAlign: 'center'
+                            }
+                        });
+                    } else if (el.category === 'edge') {
+                         newEdgesToAdd.push({
+                            id: uniqueId,
+                            source: `ai-${timestamp}-${el.source}`,
+                            target: `ai-${timestamp}-${el.target}`,
+                            label: el.label,
+                            type: 'default',
+                            animated: false,
+                            markerEnd: { type: 'arrowclosed' as any },
+                            style: { stroke: '#000000', strokeWidth: 2 }
+                        });
+                    }
+                }
+            });
+
+            if (newNodesToAdd.length > 0) {
+                setNodes((nds) => [...nds, ...newNodesToAdd]);
+            }
+            if (newEdgesToAdd.length > 0) {
+                setEdges((eds) => [...eds, ...newEdgesToAdd]);
+            }
         }
 
-        const timestamp = Date.now();
-        
-        const newNodes: Node<NodeData>[] = data.nodes.map((n: any) => ({
-          id: `ai-${timestamp}-${n.id}`,
-          type: n.type || ToolType.RECTANGLE,
-          position: { x: n.x + startX, y: n.y + startY },
-          style: { width: n.width || 150, height: n.height || 80 },
-          data: {
-            ...defaultStyle,
-            label: n.label,
-            backgroundColor: n.backgroundColor || defaultStyle.backgroundColor,
-            textColor: n.textColor || defaultStyle.textColor,
-            width: n.width || 150,
-            height: n.height || 80,
-            align: 'center',
-            verticalAlign: 'center'
-          }
-        }));
-
-        const newEdges: Edge[] = (data.edges || []).map((e: any, i: number) => ({
-          id: `edge-${timestamp}-${i}`,
-          source: `ai-${timestamp}-${e.source}`,
-          target: `ai-${timestamp}-${e.target}`,
-          label: e.label,
-          type: 'default', // or 'smoothstep', 'bezier'
-          animated: false
-        }));
-
-        setNodes((nds) => [...nds, ...newNodes]);
-        setEdges((eds) => [...eds, ...newEdges]);
-
       } else {
-        // MIND MAP MODE
-        // Define depth explicitly to avoid "empty object" schema error in Gemini 2.5
-        const schemaLevel3 = {
-            type: Type.OBJECT,
-            properties: {
-                id: { type: Type.STRING },
-                label: { type: Type.STRING },
-                // Leaf nodes don't strictly need children defined here for the AI to understand, 
-                // but we omit them to prune the schema recursion depth.
-            }
-        };
-
-        const schemaLevel2 = {
-            type: Type.OBJECT,
-            properties: {
-                id: { type: Type.STRING },
-                label: { type: Type.STRING },
-                children: { type: Type.ARRAY, items: schemaLevel3 }
-            }
-        };
-
-        const schemaLevel1 = {
-            type: Type.OBJECT,
-            properties: {
-                id: { type: Type.STRING },
-                label: { type: Type.STRING },
-                children: { type: Type.ARRAY, items: schemaLevel2 }
-            }
-        };
-
-        const instructions = `Generate a comprehensive and hierarchical Mind Map structure based on the user request.
-            Return a JSON object containing a single 'root' property.
-            The 'root' is the central topic. It has 'children' (array of sub-topics).
-            
-            Structure Guidelines:
-            - Root Node: The main topic.
-            - Level 1 Children: Major sub-topics (aim for 3-5).
-            - Level 2 Children: Details for each sub-topic.
-            
-            Each item must have:
-            - 'id': A unique string.
-            - 'label': Concise text.
-            - 'children': Array of child items (optional for leaf nodes).
-            `;
+        // --- MIND MAP STREAMING (FLAT LIST STRATEGY) ---
+        const instructions = `Generate a Mind Map for the user request.
+        
+        **Strategy**:
+        Return a FLATTENED list of nodes to allow streaming.
+        
+        **Output Format**:
+        JSON object with a "nodes" array.
+        Each node object must have:
+        - "id": string
+        - "label": string
+        - "parentId": string (or null for the Root node)
+        
+        **Guidelines**:
+        - The first node MUST be the Root (parentId: null).
+        - Generate at least 3 levels of depth.
+        - Use concise labels.
+        
+        NO Markdown. JSON ONLY.
+        `;
 
         parts.push({
-            text: `${instructions}\n\nUser Request: "${prompt || (selectedImage ? 'Analyze the image and generate a mind map.' : '')}"`
+            text: `${instructions}\n\nUser Request: "${prompt}"`
         });
 
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: { parts: parts },
-            config: {
-                responseMimeType: "application/json",
-                responseSchema: {
-                    type: Type.OBJECT,
-                    properties: {
-                        root: schemaLevel1
-                    }
-                }
-            }
-        });
-
-        const data = JSON.parse(response.text || '{}');
-        if (!data.root) throw new Error("Invalid Mind Map format");
-
-        const timestamp = Date.now();
-        const processNode = (node: any, depth: number = 0): any => {
-             return {
-                 id: `mm-${timestamp}-${node.id || Math.random().toString(36).substr(2, 9)}`,
-                 label: node.label,
-                 children: (node.children || []).map((c: any) => processNode(c, depth + 1))
-             };
-        };
-
-        const processedRoot = processNode(data.root);
-        processedRoot.layoutDirection = 'LR'; 
-
+        // Initialize MindMap container immediately
+        const mindMapId = `mm-node-${timestamp}`;
+        const initialRoot = { id: 'root', label: 'Generating...', children: [] };
+        
         const mindMapNode: Node<NodeData> = {
-            id: `mm-node-${timestamp}`,
+            id: mindMapId,
             type: ToolType.MINDMAP,
             position: { x: startX, y: startY },
             data: {
                 ...defaultStyle,
-                mindMapRoot: processedRoot,
+                mindMapRoot: initialRoot,
                 backgroundColor: 'transparent',
                 borderColor: 'transparent',
                 borderWidth: 0,
             },
             style: { width: 600, height: 400 }, 
         };
-
+        
         setNodes((nds) => [...nds, mindMapNode]);
+
+        const result = await ai.models.generateContentStream({
+            model: 'gemini-2.5-flash',
+            contents: { parts: parts },
+            config: { responseMimeType: "application/json" }
+        });
+
+        let fullText = '';
+        const processedIds = new Set<string>();
+        const accumulatedFlatNodes: any[] = [];
+
+        for await (const chunk of result) {
+            fullText += chunk.text || '';
+            
+            // Extract flat nodes from stream
+            const foundNodes = extractArrayObjects(fullText, 'nodes');
+            let hasNewUpdates = false;
+
+            foundNodes.forEach((n: any) => {
+                if (!processedIds.has(n.id)) {
+                    processedIds.add(n.id);
+                    accumulatedFlatNodes.push(n);
+                    hasNewUpdates = true;
+                }
+            });
+
+            // Rebuild tree and update React Flow only if we have new data
+            if (hasNewUpdates && accumulatedFlatNodes.length > 0) {
+                const tree = buildMindMapTree(accumulatedFlatNodes);
+                if (tree) {
+                    // Force layout direction default
+                    tree.layoutDirection = 'LR';
+                    
+                    setNodes((nds) => nds.map(n => {
+                        if (n.id === mindMapId) {
+                            return {
+                                ...n,
+                                data: {
+                                    ...n.data,
+                                    mindMapRoot: tree
+                                }
+                            }
+                        }
+                        return n;
+                    }));
+                }
+            }
+        }
       }
       
       toggleAIModal();
@@ -279,64 +393,61 @@ const AIGenerator: React.FC = () => {
     }
   };
 
+
   return (
-    <div className="fixed inset-0 bg-black/20 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg border border-gray-100 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+    <div className="absolute bottom-4 right-4 z-[100] w-[380px] bg-white rounded-xl shadow-2xl border border-gray-200 overflow-hidden animate-in slide-in-from-bottom-5 fade-in duration-200 flex flex-col">
         
         {/* Header */}
-        <div className="bg-gradient-to-r from-purple-50 to-white px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+        <div className="bg-gradient-to-r from-purple-50 to-white px-4 py-3 border-b border-purple-100 flex items-center justify-between">
           <div className="flex items-center gap-2 text-purple-700">
-            <Sparkles size={20} />
-            <h2 className="font-semibold text-lg">AI 智能生成</h2>
+            <Sparkles size={18} />
+            <h2 className="font-semibold text-sm">AI 智能助手</h2>
           </div>
           <button 
             onClick={toggleAIModal}
             className="text-gray-400 hover:text-gray-600 hover:bg-gray-100 p-1 rounded-full transition-colors"
           >
-            <X size={20} />
+            <X size={16} />
           </button>
         </div>
 
         {/* Body */}
-        <div className="p-6">
+        <div className="p-4">
           
           {/* Mode Selection */}
-          <div className="flex bg-gray-100 p-1 rounded-lg mb-4">
+          <div className="flex bg-gray-100 p-0.5 rounded-lg mb-3">
             <button 
                 onClick={() => setMode('general')}
-                className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-md text-sm font-medium transition-all ${
+                className={`flex-1 flex items-center justify-center gap-2 py-1.5 rounded-md text-xs font-medium transition-all ${
                     mode === 'general' 
                     ? 'bg-white text-purple-600 shadow-sm' 
                     : 'text-gray-500 hover:text-gray-700'
                 }`}
             >
-                <LayoutDashboard size={16} />
+                <LayoutDashboard size={14} />
                 通用流图
             </button>
             <button 
                 onClick={() => setMode('mindmap')}
-                className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-md text-sm font-medium transition-all ${
+                className={`flex-1 flex items-center justify-center gap-2 py-1.5 rounded-md text-xs font-medium transition-all ${
                     mode === 'mindmap' 
                     ? 'bg-white text-purple-600 shadow-sm' 
                     : 'text-gray-500 hover:text-gray-700'
                 }`}
             >
-                <GitBranch size={16} />
+                <GitBranch size={14} />
                 思维导图
             </button>
           </div>
 
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            {mode === 'general' ? '描述流程图或架构图 (或上传图片)...' : '描述思维导图主题 (或上传图片)...'}
-          </label>
           <div className="relative">
             <textarea
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
               placeholder={mode === 'general' 
-                  ? "例如：生成一个电商系统的微服务架构图，包含用户服务、订单服务、支付服务和数据库..." 
-                  : "例如：关于人工智能发展历史的思维导图，包含关键里程碑和技术分支..."}
-              className="w-full h-32 px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none resize-none text-sm transition-all pr-12"
+                  ? "描述流程图、架构图或图表需求..." 
+                  : "描述思维导图的主题或结构..."}
+              className="w-full h-24 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none resize-none text-xs transition-all pr-8"
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
                   handleGenerate();
@@ -344,13 +455,13 @@ const AIGenerator: React.FC = () => {
               }}
             />
             
-            <div className="absolute top-2 right-2 flex flex-col gap-2">
+            <div className="absolute top-2 right-2">
                  <button 
                     onClick={() => fileInputRef.current?.click()}
                     title="上传参考图片"
-                    className="p-1.5 bg-white border border-gray-200 rounded-lg shadow-sm text-gray-500 hover:text-purple-600 hover:border-purple-200 transition-colors"
+                    className="p-1 bg-white border border-gray-200 rounded shadow-sm text-gray-400 hover:text-purple-600 hover:border-purple-200 transition-colors"
                 >
-                    <ImageIcon size={18} />
+                    <ImageIcon size={14} />
                 </button>
                 <input 
                     type="file" 
@@ -360,31 +471,27 @@ const AIGenerator: React.FC = () => {
                     onChange={handleImageUpload}
                 />
             </div>
-
-            <div className="absolute bottom-3 right-3 text-xs text-gray-400">
-              Ctrl + Enter 发送
-            </div>
           </div>
 
            {selectedImage && (
-                <div className="mt-2 flex items-center gap-2 p-2 bg-purple-50 rounded-lg border border-purple-100 max-w-full">
+                <div className="mt-2 flex items-center gap-2 p-1.5 bg-purple-50 rounded border border-purple-100 max-w-full">
                     <img 
                         src={`data:${imageMimeType};base64,${selectedImage}`} 
                         alt="Preview" 
-                        className="h-10 w-10 object-cover rounded bg-white border border-purple-100" 
+                        className="h-8 w-8 object-cover rounded bg-white border border-purple-100" 
                     />
-                    <span className="text-xs text-purple-700 truncate flex-1">图片已添加</span>
+                    <span className="text-[10px] text-purple-700 truncate flex-1">图片已添加</span>
                     <button 
                         onClick={clearImage}
-                        className="p-1 text-purple-400 hover:text-red-500 hover:bg-white rounded transition-colors"
+                        className="p-0.5 text-purple-400 hover:text-red-500 hover:bg-white rounded transition-colors"
                     >
-                        <Trash2 size={14} />
+                        <Trash2 size={12} />
                     </button>
                 </div>
             )}
 
           {error && (
-            <div className="mt-3 p-3 bg-red-50 text-red-600 text-sm rounded-lg flex items-start gap-2">
+            <div className="mt-2 p-2 bg-red-50 text-red-600 text-xs rounded border border-red-100 flex items-start gap-1">
                <span className="mt-0.5">⚠️</span>
                <span>{error}</span>
             </div>
@@ -392,17 +499,17 @@ const AIGenerator: React.FC = () => {
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end gap-3">
+        <div className="px-4 py-3 bg-gray-50 border-t border-gray-100 flex justify-end gap-2">
           <button
             onClick={toggleAIModal}
-            className="px-4 py-2 text-gray-600 font-medium hover:bg-gray-100 rounded-lg transition-colors text-sm"
+            className="px-3 py-1.5 text-gray-600 font-medium hover:bg-gray-100 rounded-lg transition-colors text-xs"
           >
             取消
           </button>
           <button
             onClick={handleGenerate}
             disabled={isLoading || (!prompt.trim() && !selectedImage)}
-            className={`flex items-center gap-2 px-6 py-2 rounded-lg font-medium text-white text-sm transition-all shadow-sm
+            className={`flex items-center gap-1.5 px-4 py-1.5 rounded-lg font-medium text-white text-xs transition-all shadow-sm
               ${isLoading || (!prompt.trim() && !selectedImage)
                 ? 'bg-purple-300 cursor-not-allowed' 
                 : 'bg-purple-600 hover:bg-purple-700 shadow-purple-200 hover:shadow-purple-300'}
@@ -410,18 +517,17 @@ const AIGenerator: React.FC = () => {
           >
             {isLoading ? (
               <>
-                <Loader2 size={16} className="animate-spin" />
-                正在思考...
+                <Loader2 size={14} className="animate-spin" />
+                正在生成...
               </>
             ) : (
               <>
-                <Sparkles size={16} />
+                <Sparkles size={14} />
                 生成
               </>
             )}
           </button>
         </div>
-      </div>
     </div>
   );
 };

@@ -66,6 +66,8 @@ export interface NodeData {
   objectFit?: 'contain' | 'cover' | 'fill';
   // For Markdown
   markdownContent?: string;
+  // For Custom Agent
+  agentOutputType?: 'MARKDOWN' | 'MINDMAP';
 }
 
 export type CanvasNode = Node<NodeData>;

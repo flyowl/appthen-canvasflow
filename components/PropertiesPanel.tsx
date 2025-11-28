@@ -531,6 +531,11 @@ const PropertiesPanel: React.FC = () => {
 
   // --- NODE PROPERTY RENDERER ---
   if (activeNode) {
+    // Special handling for GROUP: No properties shown as requested
+    if (activeNode.type === ToolType.GROUP) {
+        return null;
+    }
+
     const getTypeLabel = (type: string) => {
         switch(type) {
             case 'RECTANGLE': return '矩形';
@@ -544,8 +549,8 @@ const PropertiesPanel: React.FC = () => {
             case 'DOCUMENT': return '文档';
             case 'TEXT': return '文本';
             case 'PEN': return '手绘';
-            case 'GROUP': return '组合'; // Logical
-            case 'SECTION': return '分区'; // Visual
+            case 'GROUP': return '组合';
+            case 'SECTION': return '分区';
             case 'STICKY_NOTE': return '便签';
             case 'IMAGE': return '图片';
             case 'VIDEO': return '视频';
@@ -553,10 +558,11 @@ const PropertiesPanel: React.FC = () => {
         }
     }
 
-    const supportsBorderRadius = [ToolType.RECTANGLE, ToolType.GROUP, ToolType.SECTION, ToolType.STICKY_NOTE].includes(activeNode.type);
+    const supportsBorderRadius = [ToolType.RECTANGLE, ToolType.SECTION, ToolType.STICKY_NOTE].includes(activeNode.type);
     const isMedia = [ToolType.IMAGE, ToolType.VIDEO].includes(activeNode.type);
     const isImage = activeNode.type === ToolType.IMAGE;
     const isVideo = activeNode.type === ToolType.VIDEO;
+    const isSection = activeNode.type === ToolType.SECTION;
 
     return (
         <div className="absolute top-20 right-4 w-72 bg-white rounded-lg shadow-xl border border-gray-200 p-4 z-50 max-h-[calc(100vh-8rem)] overflow-y-auto custom-scrollbar">
@@ -788,6 +794,7 @@ const PropertiesPanel: React.FC = () => {
                 )}
                 
                 {/* Media can have borders */}
+                {/* Partitions generally don't use border controls in this view, relying on defaults, but we allow if needed */}
                 <ColorPicker 
                     label="描边" 
                     value={activeNode.data.borderColor || '#000000'} 
