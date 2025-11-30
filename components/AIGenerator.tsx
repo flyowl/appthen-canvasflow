@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { useStore } from '../store';
 import { useReactFlow, Node, Edge } from 'reactflow';
-import { X, Sparkles, Loader2, GitBranch, LayoutDashboard, Image as ImageIcon, Trash2 } from 'lucide-react';
+import { X, Sparkles, Loader2, GitBranch, LayoutDashboard, Image as ImageIcon, Trash2, Zap } from 'lucide-react';
 import { GoogleGenAI } from "@google/genai";
 import { ToolType, NodeData, MindMapItem } from '../types';
 
@@ -113,12 +113,12 @@ const buildMindMapTree = (flatNodes: any[]): MindMapItem | null => {
 };
 
 const AIGenerator: React.FC = () => {
-  const { isAIModalOpen, toggleAIModal, defaultStyle, setNodes, setEdges, takeSnapshot } = useStore();
+  const { isAIModalOpen, toggleAIModal, defaultStyle, setNodes, setEdges, takeSnapshot, selectedNodes } = useStore();
   const { getNodes } = useReactFlow();
   const [prompt, setPrompt] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [mode, setMode] = useState<'general' | 'mindmap'>('general');
+  const [mode, setMode] = useState<'default' | 'general' | 'mindmap'>('default');
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [imageMimeType, setImageMimeType] = useState<string>('image/png');
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -157,8 +157,24 @@ const AIGenerator: React.FC = () => {
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       
-      // Context Awareness: Calculate optimized starting position
+      // Context Awareness: Calculate optimized starting position & Get Context
       const existingNodes = getNodes();
+      
+      // Provide AI with context of what's currently selected or on board
+      // Filter primarily for selected nodes if selection exists, otherwise use some global context
+      const relevantNodes = selectedNodes.length > 0 
+          ? existingNodes.filter(n => selectedNodes.includes(n.id))
+          : existingNodes.slice(0, 15); // Limit context to avoid token limits
+
+      const contextNodes = relevantNodes.map(n => ({
+          id: n.id,
+          type: n.type,
+          label: n.data.label,
+          // Simplify position for context to avoid noise
+          x: Math.round(n.position.x),
+          y: Math.round(n.position.y)
+      }));
+
       let startX = 100;
       let startY = 100;
       
@@ -183,34 +199,53 @@ const AIGenerator: React.FC = () => {
 
       const timestamp = Date.now();
 
-      if (mode === 'general') {
-        // --- GENERAL FLOWCHART STREAMING ---
-        // Strategy: Request a SINGLE array of mixed items (nodes/edges) to allow continuous streaming
-        // regardless of generation order.
-        const instructions = `You are a UI/UX expert.
+      if (mode === 'default' || mode === 'general') {
+        // --- GENERAL / DEFAULT FLOWCHART STREAMING ---
         
-        **Supported Shapes**:
-        - RECTANGLE (Process), CIRCLE (Start/End), DIAMOND (Decision)
-        - CYLINDER (Database), CLOUD (Network), DOCUMENT (File)
-        - PARALLELOGRAM (I/O), HEXAGON (Prep), STICKY_NOTE (Note)
-        
-        **Styling Rules**:
-        - Use modern **PASTEL** colors (e.g., #EFF6FF, #FEF3C7, #F0FDF4).
-        - Contrast border/text colors (e.g., #1E40AF for blue bg).
-        
-        **Layout Context**:
-        - Start generating nodes near x=${startX}, y=${startY}.
-        - Arrange nodes logically.
-        
+        let instructions = '';
+
+        if (mode === 'default') {
+             instructions = `You are a versatile AI visual designer.
+             **Goal**: Generate a diagram layout based on the user request.
+             **Capabilities**:
+             - **Layouts**: PPT Slides, Posters, Software Architecture, Infographics, etc.
+             - **Nodes**: Use 'SECTION' for containers/slides. Use 'RECTANGLE', 'CIRCLE', 'TEXT' for elements. Use 'IMAGE' for visual placeholders.
+             - **Structure**: Group related items spatially.
+             
+             **Context**:
+             Existing nodes (ID/Type/Label): ${JSON.stringify(contextNodes)}.
+             If the user asks to "add to" or "connect", use these IDs.
+             `;
+        } else {
+             instructions = `You are a UI/UX expert specialized in Flowcharts.
+             **Goal**: Create a structured Flowchart.
+             
+             **Layout Rules**:
+             1. **Direction**: Strictly Vertical (Top-to-Bottom).
+             2. **Spacing**: Ensure gaps are large enough (Y gap > 150px).
+             3. **Alignment**: Center nodes on the X-axis for the main spine.
+             
+             **Connection Rules (Crucial)**:
+             - **Vertical Flow**: Connect the **Bottom** handle of the Source to the **Top** handle of the Target.
+             - **Return Loops**: Connect **Right** handle to **Right/Top** handle.
+             - **Output**: You MUST include "sourceHandle" and "targetHandle" fields in edge objects.
+               - Valid Handles: 'top', 'bottom', 'left', 'right'.
+               - Example: { "sourceHandle": "bottom", "targetHandle": "top" }
+             
+             **Context**:
+             Existing nodes: ${JSON.stringify(contextNodes)}.
+             `;
+        }
+
+        instructions += `
         **Output Format**:
         Return a JSON object with a SINGLE array named "elements".
-        The array contains both Node objects and Edge objects.
         
         Item Schema (Node):
-        { "category": "node", "id": "...", "type": "...", "label": "...", "x": 100, "y": 100, "width": 150, "height": 80, "backgroundColor": "...", "borderColor": "...", "textColor": "..." }
+        { "category": "node", "id": "...", "type": "...", "label": "...", "x": 100, "y": 100, "width": 150, "height": 80, "backgroundColor": "...", "borderColor": "..." }
         
         Item Schema (Edge):
-        { "category": "edge", "source": "...", "target": "...", "label": "..." }
+        { "category": "edge", "source": "...", "target": "...", "label": "...", "sourceHandle": "bottom", "targetHandle": "top" }
 
         NO Markdown blocks. JSON ONLY.
         `;
@@ -240,16 +275,23 @@ const AIGenerator: React.FC = () => {
             foundElements.forEach((el: any) => {
                 // Determine ID based on content to be stable but unique per generation
                 const rawId = el.id || `${el.source}-${el.target}`;
-                const uniqueId = `ai-${timestamp}-${rawId}`;
+                // Keep original ID if it matches an existing node (for connections), else namespace it
+                const isExisting = contextNodes.some(n => n.id === rawId);
+                const uniqueId = isExisting ? rawId : `ai-${timestamp}-${rawId}`;
 
                 if (!processedIds.has(uniqueId)) {
                     processedIds.add(uniqueId);
                     
                     if (el.category === 'node') {
+                        // Offset generated coordinates to startX/startY ONLY if strictly new generation without specific coords
+                        // Ideally AI gives relative coords 0-based.
+                        const genX = (el.x || 0) + (mode === 'general' ? startX : startX);
+                        const genY = (el.y || 0) + (mode === 'general' ? startY : startY);
+
                         newNodesToAdd.push({
                             id: uniqueId,
                             type: el.type || ToolType.RECTANGLE,
-                            position: { x: el.x || startX, y: el.y || startY },
+                            position: { x: genX, y: genY },
                             style: { width: el.width || 150, height: el.height || 80 },
                             data: {
                                 ...defaultStyle,
@@ -260,17 +302,28 @@ const AIGenerator: React.FC = () => {
                                 width: el.width || 150,
                                 height: el.height || 80,
                                 align: 'center',
-                                verticalAlign: 'center'
+                                verticalAlign: 'center',
+                                // Support Markdown/Agent specific fields if AI generates them
+                                markdownContent: el.markdownContent
                             }
                         });
                     } else if (el.category === 'edge') {
+                        // Resolve source/target IDs. If they match context, use raw, else namespace
+                        const sourceIsExisting = contextNodes.some(n => n.id === el.source);
+                        const targetIsExisting = contextNodes.some(n => n.id === el.target);
+                        
+                        const sourceId = sourceIsExisting ? el.source : `ai-${timestamp}-${el.source}`;
+                        const targetId = targetIsExisting ? el.target : `ai-${timestamp}-${el.target}`;
+
                          newEdgesToAdd.push({
                             id: uniqueId,
-                            source: `ai-${timestamp}-${el.source}`,
-                            target: `ai-${timestamp}-${el.target}`,
+                            source: sourceId,
+                            target: targetId,
                             label: el.label,
                             type: 'default',
                             animated: false,
+                            sourceHandle: el.sourceHandle || (mode === 'general' ? 'bottom' : undefined),
+                            targetHandle: el.targetHandle || (mode === 'general' ? 'top' : undefined),
                             markerEnd: { type: 'arrowclosed' as any },
                             style: { stroke: '#000000', strokeWidth: 2 }
                         });
@@ -416,6 +469,18 @@ const AIGenerator: React.FC = () => {
           
           {/* Mode Selection */}
           <div className="flex bg-gray-100 p-0.5 rounded-lg mb-3">
+             <button 
+                onClick={() => setMode('default')}
+                className={`flex-1 flex items-center justify-center gap-2 py-1.5 rounded-md text-xs font-medium transition-all ${
+                    mode === 'default' 
+                    ? 'bg-white text-purple-600 shadow-sm' 
+                    : 'text-gray-500 hover:text-gray-700'
+                }`}
+                title="生成海报、PPT、架构图等任意内容"
+            >
+                <Zap size={14} />
+                智能创作
+            </button>
             <button 
                 onClick={() => setMode('general')}
                 className={`flex-1 flex items-center justify-center gap-2 py-1.5 rounded-md text-xs font-medium transition-all ${
@@ -444,9 +509,11 @@ const AIGenerator: React.FC = () => {
             <textarea
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
-              placeholder={mode === 'general' 
-                  ? "描述流程图、架构图或图表需求..." 
-                  : "描述思维导图的主题或结构..."}
+              placeholder={
+                  mode === 'default' ? "描述你想生成的内容 (如: 软件架构图、活动海报、PPT大纲)..." :
+                  mode === 'general' ? "描述流程图步骤 (如: 用户注册登录流程)..." : 
+                  "描述思维导图的主题..."
+              }
               className="w-full h-24 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none resize-none text-xs transition-all pr-8"
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
@@ -488,6 +555,13 @@ const AIGenerator: React.FC = () => {
                         <Trash2 size={12} />
                     </button>
                 </div>
+            )}
+
+            {selectedNodes.length > 0 && (
+                 <div className="mt-2 text-[10px] text-gray-400 flex items-center gap-1">
+                    <Sparkles size={10} />
+                    <span>已选中 {selectedNodes.length} 个节点作为参考上下文</span>
+                 </div>
             )}
 
           {error && (

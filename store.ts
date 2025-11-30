@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { AppState, ToolType, NodeData } from './types';
+import { AppState, ToolType, NodeData, SavedResource } from './types';
 import { 
     applyNodeChanges, 
     applyEdgeChanges, 
@@ -39,7 +39,14 @@ export const useStore = create<AppState>((set, get) => ({
   selectedEdges: [],
   copiedNodes: [],
   isLayersPanelOpen: false,
+  isSectionPanelOpen: false,
   isAIModalOpen: false,
+  
+  // Resource Market Initial State
+  isResourceMarketOpen: false,
+  savedResources: [],
+  isSaveResourceModalOpen: false,
+
   defaultStyle: {
     backgroundColor: '#ffffff',
     borderColor: '#94a3b8', // Slate 400 - Softer than black
@@ -64,11 +71,23 @@ export const useStore = create<AppState>((set, get) => ({
   setSelectedEdges: (selectedEdges) => set({ selectedEdges }),
   setCopiedNodes: (copiedNodes) => set({ copiedNodes }),
   toggleLayersPanel: () => set((state) => ({ isLayersPanelOpen: !state.isLayersPanelOpen })),
+  toggleSectionPanel: () => set((state) => ({ isSectionPanelOpen: !state.isSectionPanelOpen })),
   toggleAIModal: () => set((state) => ({ isAIModalOpen: !state.isAIModalOpen })),
   updateDefaultStyle: (style) =>
     set((state) => ({
       defaultStyle: { ...state.defaultStyle, ...style },
     })),
+
+  // Resource Market Actions
+  toggleResourceMarket: () => set((state) => ({ isResourceMarketOpen: !state.isResourceMarketOpen })),
+  addResource: (resource: SavedResource) => set((state) => ({ 
+      savedResources: [...state.savedResources, resource] 
+  })),
+  removeResource: (id: string) => set((state) => ({ 
+      savedResources: state.savedResources.filter(r => r.id !== id) 
+  })),
+  openSaveResourceModal: () => set({ isSaveResourceModalOpen: true }),
+  closeSaveResourceModal: () => set({ isSaveResourceModalOpen: false }),
 
   // Actions
   setNodes: (payload) => set((state) => {

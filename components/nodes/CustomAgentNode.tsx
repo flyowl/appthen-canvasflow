@@ -78,10 +78,35 @@ const buildMindMapTree = (flatNodes: any[]): MindMapItem | null => {
     return root;
 };
 
+// Helper to extract text context from an upstream node
+const getNodeContext = (node: RFNode<NodeData>): string => {
+    if (!node) return '';
+    
+    if (node.type === ToolType.MARKDOWN && node.data.markdownContent) {
+        return `[Source: Markdown Node]\n${node.data.markdownContent}`;
+    }
+    
+    if (node.type === ToolType.MINDMAP && node.data.mindMapRoot) {
+        const traverse = (item: MindMapItem, depth: number = 0): string => {
+            let text = `${'  '.repeat(depth)}- ${item.label}\n`;
+            if (item.children) {
+                text += item.children.map(c => traverse(c, depth + 1)).join('');
+            }
+            return text;
+        };
+        return `[Source: Mind Map Structure]\n${traverse(node.data.mindMapRoot)}`;
+    }
+
+    if (node.data.label) {
+        return `[Source: ${node.type} Node]\n${node.data.label}`;
+    }
+    
+    return '';
+};
 
 export const CustomAgentNode = memo(({ id, data, selected, isConnectable }: NodeProps<NodeData>) => {
   const { setNodes, setEdges, takeSnapshot, defaultStyle } = useStore();
-  const { getNodes } = useReactFlow();
+  const { getNodes, getEdges } = useReactFlow();
   const [isLoading, setIsLoading] = useState(false);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -115,8 +140,24 @@ export const CustomAgentNode = memo(({ id, data, selected, isConnectable }: Node
 
     try {
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-        const currentNode = getNodes().find(n => n.id === id);
+        const nodes = getNodes();
+        const edges = getEdges();
+        const currentNode = nodes.find(n => n.id === id);
         if (!currentNode) return;
+
+        // 1. Context Awareness: Find Upstream Nodes
+        const incomingEdges = edges.filter(e => e.target === id);
+        const sourceNodes = incomingEdges
+            .map(e => nodes.find(n => n.id === e.source))
+            .filter(n => n !== undefined) as RFNode<NodeData>[];
+        
+        let contextPrompt = "";
+        if (sourceNodes.length > 0) {
+            const contexts = sourceNodes.map(n => getNodeContext(n)).filter(t => t.trim().length > 0);
+            if (contexts.length > 0) {
+                contextPrompt = `\n\n### Context Information (from connected previous nodes):\n"""\n${contexts.join('\n\n')}\n"""\n\n(Use the above context to inform your response to the user instruction below.)\n`;
+            }
+        }
 
         // Position for new node (Right side)
         const startX = currentNode.position.x + (currentNode.width || 250) + 100;
@@ -124,7 +165,12 @@ export const CustomAgentNode = memo(({ id, data, selected, isConnectable }: Node
         const newId = `ai-gen-${Date.now()}`;
 
         if (outputType === 'MARKDOWN') {
-            const prompt = `You are a helpful assistant. Generate a comprehensive and well-structured Markdown response for the following request: "${data.label}". 
+            const prompt = `You are a helpful assistant. 
+            ${contextPrompt}
+            
+            ### User Instruction: "${data.label}". 
+            
+            Generate a comprehensive and well-structured Markdown response.
             Use headers, lists, and bold text to make it readable. Do not wrap in markdown code blocks.`;
 
             const response = await ai.models.generateContent({
@@ -153,7 +199,12 @@ export const CustomAgentNode = memo(({ id, data, selected, isConnectable }: Node
             setNodes((nds) => [...nds, newNode]);
         } else {
             // MINDMAP
-            const prompt = `Generate a Mind Map for: "${data.label}".
+            const prompt = `
+            ${contextPrompt}
+            
+            ### User Instruction: "${data.label}".
+
+            Generate a Mind Map based on the instruction and context (if provided).
             Return a JSON object with a "nodes" array.
             Each node object must have: "id", "label", "parentId" (null for root).
             Generate at least 3 levels.

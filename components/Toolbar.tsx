@@ -36,7 +36,8 @@ import {
   Bot,
   FileText,
   FileJson,
-  Upload
+  Upload,
+  Clover
 } from 'lucide-react';
 
 // Custom small Parallelogram icon if needed, or use generic
@@ -50,7 +51,9 @@ const Toolbar: React.FC = () => {
   const { 
       tool, setTool, 
       toggleLayersPanel, isLayersPanelOpen, 
+      toggleSectionPanel, isSectionPanelOpen,
       toggleAIModal, isAIModalOpen,
+      toggleResourceMarket, isResourceMarketOpen,
       undo, redo, clearAll, history,
       setNodes, setEdges, takeSnapshot
   } = useStore();
@@ -201,6 +204,21 @@ const Toolbar: React.FC = () => {
           onChange={handleImportJSON} 
       />
 
+      {/* Resource Market Toggle */}
+      <button
+        onClick={toggleResourceMarket}
+        title="资源市场"
+        className={`p-2 rounded-md transition-all duration-200 ${
+            isResourceMarketOpen
+            ? 'bg-green-50 text-green-600 shadow-sm ring-1 ring-green-100'
+            : 'text-gray-600 hover:bg-green-50 hover:text-green-600'
+        }`}
+      >
+        <Clover size={18} />
+      </button>
+
+      <div className="w-px h-6 bg-gray-200 mx-1" />
+
       {/* PLUS MENU (Insert/Utils) */}
       <div className="relative group/menu flex items-center justify-center">
         <button
@@ -254,6 +272,14 @@ const Toolbar: React.FC = () => {
                 >
                     <Layers size={16} />
                     <span>{isLayersPanelOpen ? '关闭图层' : '图层面板'}</span>
+                </button>
+
+                <button
+                    onClick={toggleSectionPanel}
+                    className={`flex items-center gap-2 px-2 py-1.5 rounded-md text-sm transition-colors text-left ${isSectionPanelOpen ? 'bg-blue-50 text-blue-600' : 'text-gray-700 hover:bg-gray-100'}`}
+                >
+                    <LayoutDashboard size={16} />
+                    <span>{isSectionPanelOpen ? '关闭分区' : '分区面板'}</span>
                 </button>
 
                 <button

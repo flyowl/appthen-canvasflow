@@ -72,13 +72,28 @@ export interface NodeData {
 
 export type CanvasNode = Node<NodeData>;
 
+export interface SavedResource {
+    id: string;
+    name: string;
+    description: string;
+    nodes: Node<NodeData>[];
+    edges: Edge[];
+}
+
 export interface AppState {
   tool: ToolType;
   selectedNodes: string[];
   selectedEdges: string[];
   copiedNodes: Node<NodeData>[];
   isLayersPanelOpen: boolean;
+  isSectionPanelOpen: boolean;
   isAIModalOpen: boolean;
+  
+  // Resource Market State
+  isResourceMarketOpen: boolean;
+  savedResources: SavedResource[];
+  isSaveResourceModalOpen: boolean;
+  
   defaultStyle: {
     backgroundColor: string;
     borderColor: string;
@@ -103,8 +118,16 @@ export interface AppState {
   setSelectedEdges: (edgeIds: string[]) => void;
   setCopiedNodes: (nodes: Node<NodeData>[]) => void;
   toggleLayersPanel: () => void;
+  toggleSectionPanel: () => void;
   toggleAIModal: () => void;
   updateDefaultStyle: (style: Partial<AppState['defaultStyle']>) => void;
+
+  // Resource Market Actions
+  toggleResourceMarket: () => void;
+  addResource: (resource: SavedResource) => void;
+  removeResource: (id: string) => void;
+  openSaveResourceModal: () => void;
+  closeSaveResourceModal: () => void;
 
   // Actions
   setNodes: (payload: Node<NodeData>[] | ((nodes: Node<NodeData>[]) => Node<NodeData>[])) => void;

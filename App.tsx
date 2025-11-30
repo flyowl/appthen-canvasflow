@@ -1,3 +1,4 @@
+
 import React, { useCallback, useRef, useState, useEffect } from 'react';
 import ReactFlow, {
   Background,
@@ -21,13 +22,17 @@ import ReactFlow, {
 } from 'reactflow';
 
 import { useStore } from './store';
-import { ToolType, NodeData } from './types';
+import { ToolType, NodeData, SavedResource } from './types';
 import Toolbar from './components/Toolbar';
 import PropertiesPanel from './components/PropertiesPanel';
 import LayersPanel from './components/LayersPanel';
+import SectionPanel from './components/SectionPanel';
 import SearchBar from './components/SearchBar';
 import ContextMenu from './components/ContextMenu';
 import AIGenerator from './components/AIGenerator';
+import ResourceMarket from './components/ResourceMarket';
+import SaveResourceModal from './components/SaveResourceModal';
+
 import { 
     RectangleNode, 
     CircleNode, 
@@ -109,7 +114,7 @@ const CanvasBoard: React.FC = () => {
   const { 
       nodes, edges, onNodesChange, onEdgesChange, setNodes, setEdges, onConnect: onStoreConnect,
       tool, setTool, defaultStyle, setSelectedNodes, selectedNodes, copiedNodes, setCopiedNodes, setSelectedEdges,
-      takeSnapshot
+      takeSnapshot, openSaveResourceModal, isAIModalOpen, toggleAIModal
   } = useStore();
 
   const { project, getNodes, screenToFlowPosition, getViewport } = useReactFlow();
@@ -141,8 +146,11 @@ const CanvasBoard: React.FC = () => {
         if (!items) return;
 
         for (let i = 0; i < items.length; i++) {
-            if (items[i].type.indexOf('image') !== -1) {
-                const blob = items[i].getAsFile();
+            const item = items[i];
+            
+            // Handle Images (Bitmap & SVG Files)
+            if (item.type.indexOf('image') !== -1) {
+                const blob = item.getAsFile();
                 if (blob) {
                     const reader = new FileReader();
                     reader.onload = (event) => {
@@ -155,6 +163,8 @@ const CanvasBoard: React.FC = () => {
                         const centerY = (-y + (window.innerHeight / 2)) / zoom;
 
                         const src = event.target?.result as string;
+                        const isSVG = blob.type.includes('svg');
+
                         const newNode: Node<NodeData> = {
                             id: `IMAGE-${Date.now()}`,
                             type: ToolType.IMAGE,
@@ -162,7 +172,8 @@ const CanvasBoard: React.FC = () => {
                             data: {
                                 ...defaultStyle,
                                 src: src,
-                                label: 'Pasted Image'
+                                label: isSVG ? 'SVG Graphics' : 'Pasted Image',
+                                objectFit: 'contain'
                             },
                             style: { width: 200, height: 200 }
                         };
@@ -170,6 +181,41 @@ const CanvasBoard: React.FC = () => {
                     };
                     reader.readAsDataURL(blob);
                 }
+            } 
+            // Handle SVG Text Code (text/plain)
+            else if (item.type === 'text/plain') {
+                item.getAsString((text) => {
+                    const trimmed = text.trim();
+                    // Robust check for SVG start tag, allowing for XML declaration or whitespace
+                    // Checks if it contains <svg and </svg>
+                    if (trimmed.match(/^(\s*<\?xml[^>]*\?>)?(\s*<!DOCTYPE[^>]*>)?\s*<svg/i) && trimmed.includes('</svg>')) {
+                         takeSnapshot();
+                         const { x, y, zoom } = getViewport();
+                         const centerX = (-x + (window.innerWidth / 2)) / zoom;
+                         const centerY = (-y + (window.innerHeight / 2)) / zoom;
+
+                         // Use Blob to generate Data URL for the SVG text
+                         const blob = new Blob([trimmed], { type: 'image/svg+xml' });
+                         const reader = new FileReader();
+                         reader.onload = (e) => {
+                             const src = e.target?.result as string;
+                             const newNode: Node<NodeData> = {
+                                id: `SVG-${Date.now()}`,
+                                type: ToolType.IMAGE,
+                                position: { x: centerX - 100, y: centerY - 100 },
+                                data: {
+                                    ...defaultStyle,
+                                    src: src,
+                                    label: 'Pasted SVG',
+                                    objectFit: 'contain'
+                                },
+                                style: { width: 200, height: 200 }
+                             };
+                             setNodes((nds) => nds.concat(newNode));
+                         };
+                         reader.readAsDataURL(blob);
+                    }
+                });
             }
         }
     };
@@ -520,11 +566,19 @@ const CanvasBoard: React.FC = () => {
       const selectedNodeObjs = getNodes().filter(n => selectedNodes.includes(n.id));
 
       // Actions that modify structure need snapshots
-      if(['delete', 'paste', 'front', 'back', 'forward', 'backward', 'group', 'ungroup'].includes(action)) {
+      if(['delete', 'paste', 'front', 'back', 'forward', 'backward', 'group', 'ungroup', 'ai_generate'].includes(action)) {
           takeSnapshot();
       }
 
       switch(action) {
+          case 'ai_generate':
+              if (!isAIModalOpen) toggleAIModal();
+              break;
+              
+          case 'saveResource':
+              openSaveResourceModal();
+              break;
+
           case 'delete':
               const nodesToDeleteIds = [...selectedNodes];
               const groupsToDelete = selectedNodeObjs.filter(n => n.type === ToolType.GROUP || n.type === ToolType.SECTION);
@@ -717,7 +771,7 @@ const CanvasBoard: React.FC = () => {
               }
               break;
       }
-  }, [selectedNodes, copiedNodes, menuState, getNodes, setNodes, setSelectedNodes, setCopiedNodes, screenToFlowPosition, defaultStyle, takeSnapshot]);
+  }, [selectedNodes, copiedNodes, menuState, getNodes, setNodes, setSelectedNodes, setCopiedNodes, screenToFlowPosition, defaultStyle, takeSnapshot, openSaveResourceModal, isAIModalOpen, toggleAIModal]);
 
 
   const onDragOver = useCallback((event: React.DragEvent) => {
@@ -735,6 +789,95 @@ const CanvasBoard: React.FC = () => {
             x: event.clientX,
             y: event.clientY,
         });
+      }
+
+      // 0. Handle Resource Market Drops
+      const resourceData = event.dataTransfer.getData('application/canvas-resource');
+      if (resourceData) {
+          try {
+              const resource: SavedResource = JSON.parse(resourceData);
+              takeSnapshot();
+              
+              const idMap = new Map<string, string>();
+              
+              // 1. Generate ID Map to ensure unique IDs on drop
+              resource.nodes.forEach(node => {
+                  const newId = `res-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
+                  idMap.set(node.id, newId);
+              });
+
+              // Calculate bounding box of root nodes to center the drop
+              let maxWidth = 0;
+              let maxHeight = 0;
+              resource.nodes.forEach(n => {
+                    // Only consider root nodes for centering logic (no parent in the set)
+                    if (!n.parentNode || !resource.nodes.find(p => p.id === n.parentNode)) {
+                        const w = n.width || n.style?.width || 150;
+                        const h = n.height || n.style?.height || 50;
+                        // Since roots are normalized to (0,0) based on SaveResourceModal logic,
+                        // we can assume position represents offset from the top-left of the original selection.
+                        const right = n.position.x + Number(w);
+                        const bottom = n.position.y + Number(h);
+                        if (right > maxWidth) maxWidth = right;
+                        if (bottom > maxHeight) maxHeight = bottom;
+                    }
+              });
+
+              // Offset to center the resource group under cursor
+              const offsetX = position.x - (maxWidth / 2);
+              const offsetY = position.y - (maxHeight / 2);
+
+              // 2. Reconstruct Nodes
+              const newNodes = resource.nodes.map(node => {
+                  const newId = idMap.get(node.id)!;
+                  
+                  // Check if parent was also dragged/saved. If so, remap parent ID.
+                  let newParentId = undefined;
+                  if (node.parentNode && idMap.has(node.parentNode)) {
+                      newParentId = idMap.get(node.parentNode);
+                  }
+
+                  // Clone position to avoid mutation
+                  let newPos = { ...node.position };
+
+                  // If this node does NOT have a parent in the new set (i.e. it's a root node of this group),
+                  // shift its position to the mouse drop location.
+                  // Note: node.position for root nodes in the resource is already normalized relative to the group origin.
+                  if (!newParentId) {
+                      newPos.x += offsetX;
+                      newPos.y += offsetY;
+                  }
+                  
+                  return {
+                      ...node,
+                      id: newId,
+                      parentNode: newParentId,
+                      position: newPos,
+                      // Ensure fresh state
+                      selected: true,
+                      dragging: false,
+                      positionAbsolute: undefined, // Let React Flow recalculate
+                      data: { ...node.data, isEditing: false }
+                  };
+              });
+              
+              // 3. Reconstruct Edges
+              const newEdges = resource.edges.map(edge => ({
+                  ...edge,
+                  id: `res-edge-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+                  source: idMap.get(edge.source) || edge.source,
+                  target: idMap.get(edge.target) || edge.target,
+                  selected: false
+              }));
+              
+              setNodes(nds => [...nds.map(n => ({...n, selected: false})), ...newNodes]);
+              setEdges(eds => [...eds, ...newEdges]);
+              setSelectedNodes(newNodes.map(n => n.id));
+              
+          } catch (e) {
+              console.error("Failed to parse resource drop", e);
+          }
+          return;
       }
 
       // 1. Handle File Drops from Desktop (Images/Videos)
@@ -856,7 +999,7 @@ const CanvasBoard: React.FC = () => {
       }
       setTool(ToolType.SELECT);
     },
-    [project, screenToFlowPosition, setNodes, setTool, defaultStyle, takeSnapshot]
+    [project, screenToFlowPosition, setNodes, setTool, defaultStyle, takeSnapshot, setEdges, setSelectedNodes]
   );
 
 
@@ -1189,7 +1332,10 @@ const CanvasBoard: React.FC = () => {
         <SearchBar />
         <PropertiesPanel />
         <LayersPanel />
+        <SectionPanel />
         <AIGenerator />
+        <ResourceMarket />
+        <SaveResourceModal />
         
       </ReactFlow>
 

@@ -57,6 +57,19 @@ export const ShapeNodeWrapper = ({
                     isVisible={!!selected} 
                     minWidth={minWidth} 
                     minHeight={minHeight}
+                    handleStyle={{ 
+                        width: 14, 
+                        height: 14, 
+                        borderRadius: 3, 
+                        backgroundColor: '#3b82f6', 
+                        border: '2px solid white',
+                        boxShadow: '0 2px 5px rgba(0,0,0,0.1)'
+                    }}
+                    lineStyle={{
+                        borderWidth: 2,
+                        borderStyle: 'solid',
+                        borderColor: '#3b82f6'
+                    }}
                 />
             )}
             {children}

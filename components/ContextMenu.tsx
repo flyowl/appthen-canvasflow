@@ -8,7 +8,9 @@ import {
   Group, 
   Ungroup,
   ArrowUp,
-  ArrowDown
+  ArrowDown,
+  BookmarkPlus,
+  Sparkles
 } from 'lucide-react';
 
 interface ContextMenuProps {
@@ -69,7 +71,6 @@ const ContextMenu: React.FC<ContextMenuProps> = ({
   }: any) => (
     <button
       onClick={(e) => {
-        // Critical: Stop propagation to ensure the action fires before any outside click handlers
         e.stopPropagation();
         e.nativeEvent.stopImmediatePropagation();
         if(!disabled) {
@@ -77,7 +78,6 @@ const ContextMenu: React.FC<ContextMenuProps> = ({
             onClose();
         }
       }}
-      // Stop mousedown to prevent App's onMouseDown from closing the menu before click fires
       onMouseDown={(e) => { e.stopPropagation(); }}
       disabled={disabled}
       className={`w-full flex items-center justify-between px-3 py-2 text-sm transition-colors text-left
@@ -99,12 +99,19 @@ const ContextMenu: React.FC<ContextMenuProps> = ({
       style={style}
       className="fixed z-[9999] min-w-[220px] bg-white rounded-lg shadow-xl border border-gray-200 py-1.5 animate-in fade-in zoom-in-95 duration-100 select-none"
       onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); }}
-      // Stop all propagation from the menu container to avoid conflict with React Flow canvas listeners
       onMouseDown={(e) => e.stopPropagation()}
       onPointerDown={(e) => e.stopPropagation()}
       onClick={(e) => e.stopPropagation()}
       onDoubleClick={(e) => e.stopPropagation()}
     >
+      <MenuItem 
+        icon={Sparkles} 
+        label="AI 智能生成" 
+        action="ai_generate" 
+      />
+
+      <div className="h-px bg-gray-100 my-1.5 pointer-events-none" />
+
       <MenuItem 
         icon={Copy} 
         label="复制" 
@@ -120,6 +127,15 @@ const ContextMenu: React.FC<ContextMenuProps> = ({
         disabled={!hasClipboard} 
       />
       
+      <div className="h-px bg-gray-100 my-1.5 pointer-events-none" />
+
+      <MenuItem 
+        icon={BookmarkPlus} 
+        label="保存到我的" 
+        action="saveResource" 
+        disabled={!hasSelection} 
+      />
+
       <div className="h-px bg-gray-100 my-1.5 pointer-events-none" />
       
       {isGroup ? (
