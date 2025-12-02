@@ -47,6 +47,16 @@
       .tiptap code { background-color: #f1f5f9; padding: 0.25em; border-radius: 0.25rem; font-family: monospace; font-size: 0.9em; color: #ef4444; }
       .tiptap pre code { background-color: transparent; color: inherit; padding: 0; }
       .tiptap p { margin: 0.5em 0; line-height: 1.6; }
+
+      /* Ensure edge paths still capture pointer events for interaction */
+      /* Added .react-flow__edge-interaction to ensure robust clicking on invisible interaction path */
+      .react-flow__edge-path, .react-flow__connection-path, .react-flow__edge-interaction {
+        pointer-events: stroke;
+        cursor: pointer;
+      }
+      .react-flow__edge.selected .react-flow__edge-path {
+          stroke: #3b82f6; 
+      }
     </style>
   <script type="importmap">
 {

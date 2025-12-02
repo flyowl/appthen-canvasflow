@@ -1,12 +1,16 @@
-import React, { memo, useState, useRef, useEffect } from 'react';
-import { NodeProps, Position, useReactFlow, MarkerType, Node as RFNode } from 'reactflow';
-import { NodeData, ToolType, MindMapItem } from '../../types';
-import { CustomHandle, EditableLabel, ShapeNodeWrapper } from './BaseNode';
-import { Bot, Play, Settings, Loader2, FileText, GitBranch, ChevronDown, Check } from 'lucide-react';
-import { useStore } from '../../store';
+
+import React, { memo, useEffect, useRef, useState } from 'react';
+import { NodeProps, Position, MarkerType, Node as RFNode, useReactFlow } from 'reactflow';
+import { useEditor, EditorContent } from '@tiptap/react';
+import StarterKit from '@tiptap/starter-kit';
+import { Markdown } from 'tiptap-markdown';
+import { NodeData, ToolType, MindMapItem } from '../types';
+import { CustomHandle, ShapeNodeWrapper } from './BaseNode';
+import { useStore } from '../store';
+import { FileText, Settings, Play, Loader2, ChevronDown, Check, GitBranch } from 'lucide-react';
 import { GoogleGenAI } from "@google/genai";
 
-// --- Helpers for Parsing ---
+// --- Helpers for Parsing (Duplicated for self-containment) ---
 
 const extractArrayObjects = (text: string, key: string) => {
     const objects: any[] = [];
@@ -78,40 +82,18 @@ const buildMindMapTree = (flatNodes: any[]): MindMapItem | null => {
     return root;
 };
 
-// Helper to extract text context from an upstream node
-const getNodeContext = (node: RFNode<NodeData>): string => {
-    if (!node) return '';
-    
-    if (node.type === ToolType.MARKDOWN && node.data.markdownContent) {
-        return `[Source: Markdown Node]\n${node.data.markdownContent}`;
-    }
-    
-    if (node.type === ToolType.MINDMAP && node.data.mindMapRoot) {
-        const traverse = (item: MindMapItem, depth: number = 0): string => {
-            let text = `${'  '.repeat(depth)}- ${item.label}\n`;
-            if (item.children) {
-                text += item.children.map(c => traverse(c, depth + 1)).join('');
-            }
-            return text;
-        };
-        return `[Source: Mind Map Structure]\n${traverse(node.data.mindMapRoot)}`;
-    }
-
-    if (node.data.label) {
-        return `[Source: ${node.type} Node]\n${node.data.label}`;
-    }
-    
-    return '';
-};
-
-export const CustomAgentNode = memo(({ id, data, selected, isConnectable }: NodeProps<NodeData>) => {
+export const MarkdownNode = memo(({ id, data, selected, isConnectable }: NodeProps<NodeData>) => {
   const { setNodes, setEdges, takeSnapshot, defaultStyle } = useStore();
-  const { getNodes, getEdges } = useReactFlow();
+  const { getNodes } = useReactFlow();
+  
+  // AI State
   const [isLoading, setIsLoading] = useState(false);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
-
   const outputType = data.agentOutputType || 'MARKDOWN';
+
+  // Editor State
+  const isUpdatingFromProps = useRef(false);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -134,53 +116,50 @@ export const CustomAgentNode = memo(({ id, data, selected, isConnectable }: Node
   };
 
   const handleRun = async () => {
-    if (isLoading || !data.label) return;
+    // Basic content validation
+    const content = data.markdownContent;
+    if (isLoading || !content || content === '请编写内容...') {
+        alert("请先输入一些内容再运行");
+        return;
+    }
+
     setIsLoading(true);
     takeSnapshot();
 
     try {
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-        const nodes = getNodes();
-        const edges = getEdges();
-        const currentNode = nodes.find(n => n.id === id);
+        const currentNode = getNodes().find(n => n.id === id);
         if (!currentNode) return;
 
-        // 1. Context Awareness: Find Upstream Nodes
-        const incomingEdges = edges.filter(e => e.target === id);
-        const sourceNodes = incomingEdges
-            .map(e => nodes.find(n => n.id === e.source))
-            .filter(n => n !== undefined) as RFNode<NodeData>[];
-        
-        let contextPrompt = "";
-        if (sourceNodes.length > 0) {
-            const contexts = sourceNodes.map(n => getNodeContext(n)).filter(t => t.trim().length > 0);
-            if (contexts.length > 0) {
-                contextPrompt = `\n\n### Context Information (from connected previous nodes):\n"""\n${contexts.join('\n\n')}\n"""\n\n(Use the above context to inform your response to the user instruction below.)\n`;
-            }
-        }
-
         // Position for new node (Right side)
-        const startX = currentNode.position.x + (currentNode.width || 250) + 100;
+        const startX = currentNode.position.x + (currentNode.width || 400) + 100;
         const startY = currentNode.position.y;
-        const newId = `ai-gen-${Date.now()}`;
+        const newId = `ai-gen-md-${Date.now()}`;
 
         if (outputType === 'MARKDOWN') {
             const prompt = `You are a helpful assistant. 
-            ${contextPrompt}
+            Based on the following content, continue writing, expand upon it, or provide a detailed response in Markdown format.
+            Use headers, lists, and bold text to make it readable. Do not wrap in markdown code blocks.
             
-            ### User Instruction: "${data.label}". 
-            
-            Generate a comprehensive and well-structured Markdown response.
-            Use headers, lists, and bold text to make it readable. Do not wrap in markdown code blocks.`;
+            Current Content:
+            """
+            ${content}
+            """`;
 
-            // 1. Create Node Immediately
+            const response = await ai.models.generateContent({
+                model: 'gemini-2.5-flash',
+                contents: prompt,
+            });
+
+            const markdownContent = response.text || '# Error generating content';
+
             const newNode: RFNode<NodeData> = {
                 id: newId,
                 type: ToolType.MARKDOWN,
                 position: { x: startX, y: startY },
                 data: {
                     ...defaultStyle,
-                    markdownContent: 'Generating...',
+                    markdownContent: markdownContent,
                     backgroundColor: '#ffffff',
                     borderColor: '#e2e8f0',
                     borderWidth: 1,
@@ -189,53 +168,20 @@ export const CustomAgentNode = memo(({ id, data, selected, isConnectable }: Node
                 },
                 style: { width: 400, height: 500 }
             };
+
             setNodes((nds) => [...nds, newNode]);
-
-            // 2. Create Edge Immediately
-            const newEdge = {
-                id: `edge-${id}-${newId}`,
-                source: id,
-                target: newId,
-                sourceHandle: 'right',
-                targetHandle: 'left',
-                type: 'default',
-                animated: true,
-                style: { stroke: '#6366f1', strokeWidth: 2 },
-                markerEnd: { type: MarkerType.ArrowClosed, color: '#6366f1' }
-            };
-            setEdges((eds) => [...eds, newEdge]);
-
-            // 3. Stream Content
-            const result = await ai.models.generateContentStream({
-                model: 'gemini-2.5-flash',
-                contents: prompt,
-            });
-
-            let fullText = '';
-            for await (const chunk of result) {
-                const text = chunk.text;
-                if (text) {
-                    fullText += text;
-                    setNodes((nds) => nds.map(n => {
-                        if (n.id === newId) {
-                            return { ...n, data: { ...n.data, markdownContent: fullText } };
-                        }
-                        return n;
-                    }));
-                }
-            }
         } else {
             // MINDMAP
-            const prompt = `
-            ${contextPrompt}
-            
-            ### User Instruction: "${data.label}".
-
-            Generate a Mind Map based on the instruction and context (if provided).
+            const prompt = `Analyze the following content and generate a Mind Map structure summarizing it.
             Return a JSON object with a "nodes" array.
             Each node object must have: "id", "label", "parentId" (null for root).
             Generate at least 3 levels.
-            NO Markdown. JSON ONLY.`;
+            NO Markdown. JSON ONLY.
+            
+            Current Content:
+            """
+            ${content}
+            """`;
 
             const response = await ai.models.generateContent({
                 model: 'gemini-2.5-flash',
@@ -262,56 +208,98 @@ export const CustomAgentNode = memo(({ id, data, selected, isConnectable }: Node
                     style: { width: 600, height: 400 }
                 };
                 setNodes((nds) => [...nds, newNode]);
-
-                // Create Edge for MindMap (after generation)
-                const newEdge = {
-                    id: `edge-${id}-${newId}`,
-                    source: id,
-                    target: newId,
-                    sourceHandle: 'right', // Connect from right
-                    targetHandle: 'main-left', // Connect to left (MindMap specific handle)
-                    type: 'default',
-                    animated: true,
-                    style: { stroke: '#6366f1', strokeWidth: 2 },
-                    markerEnd: { type: MarkerType.ArrowClosed, color: '#6366f1' }
-                };
-                setEdges((eds) => [...eds, newEdge]);
             }
         }
 
+        // Create Edge
+        const newEdge = {
+            id: `edge-${id}-${newId}`,
+            source: id,
+            target: newId,
+            sourceHandle: 'right', // Connect from right
+            targetHandle: outputType === 'MINDMAP' ? 'main-left' : 'left', // Connect to left
+            type: 'default',
+            animated: true,
+            style: { stroke: '#6366f1', strokeWidth: 2 },
+            markerEnd: { type: MarkerType.ArrowClosed, color: '#6366f1' }
+        };
+
+        setEdges((eds) => [...eds, newEdge]);
+
     } catch (e) {
-        console.error("Agent generation failed", e);
+        console.error("Markdown generation failed", e);
         alert("生成失败，请稍后重试");
     } finally {
         setIsLoading(false);
     }
   };
 
+  const editor = useEditor({
+    extensions: [
+      StarterKit,
+      Markdown,
+    ],
+    content: data.markdownContent || '# Markdown Editor\n\nType **markdown** here...',
+    editorProps: {
+      attributes: {
+        class: 'w-full h-full outline-none tiptap prose prose-sm max-w-none text-gray-800',
+      },
+    },
+    onUpdate: ({ editor }) => {
+      if (isUpdatingFromProps.current) return;
+      
+      const markdown = (editor.storage as any).markdown.getMarkdown();
+      
+      setNodes(nodes => nodes.map(n => {
+        if (n.id === id) {
+           if (n.data.markdownContent !== markdown) {
+             return { ...n, data: { ...n.data, markdownContent: markdown } };
+           }
+        }
+        return n;
+      }));
+    },
+    onBlur: () => {
+        takeSnapshot();
+    }
+  });
+
+  useEffect(() => {
+    if (editor && data.markdownContent !== undefined) {
+       const currentContent = (editor.storage as any).markdown.getMarkdown();
+       if (currentContent !== data.markdownContent) {
+           isUpdatingFromProps.current = true;
+           editor.commands.setContent(data.markdownContent);
+           isUpdatingFromProps.current = false;
+       }
+    }
+  }, [data.markdownContent, editor]);
+
   return (
-    <ShapeNodeWrapper selected={selected} minWidth={250} minHeight={150}>
+    <ShapeNodeWrapper selected={selected} minWidth={300} minHeight={200}>
       <div 
         className={`relative w-full h-full flex flex-col bg-white rounded-xl overflow-hidden shadow-sm transition-all duration-300 ${
             selected ? 'ring-2 ring-blue-500 ring-offset-1 shadow-md' : 'border border-gray-200 hover:shadow-md'
         }`}
       >
-        {/* Header */}
-        <div className="bg-indigo-50 px-3 py-2 border-b border-indigo-100 flex items-center justify-between z-50">
-            <div className="flex items-center gap-2 text-indigo-900 font-semibold text-xs select-none">
-                <Bot size={16} className="text-indigo-600" />
-                <span>智能体</span>
-                <span className="text-indigo-400">|</span>
-                <span className="text-[10px] text-indigo-600 uppercase flex items-center gap-1 bg-white/50 px-1.5 py-0.5 rounded">
+        {/* Header Strip with AI Controls */}
+        <div className="bg-gray-50 px-3 py-2 border-b border-gray-100 flex items-center justify-between z-50">
+             <div className="flex items-center gap-2 text-gray-700 font-semibold text-xs select-none">
+                 <FileText size={16} className="text-gray-500" />
+                 <span>Markdown</span>
+                 <span className="text-gray-300">|</span>
+                 <span className="text-[10px] text-gray-600 uppercase flex items-center gap-1 bg-white/50 px-1.5 py-0.5 rounded">
                     {outputType === 'MARKDOWN' ? <FileText size={10} /> : <GitBranch size={10} />}
-                    {outputType === 'MARKDOWN' ? '富文本' : '思维导图'}
+                    {outputType === 'MARKDOWN' ? '生成富文本' : '生成导图'}
                 </span>
-            </div>
-            
-            <div className="flex items-center gap-1">
+             </div>
+
+             <div className="flex items-center gap-1">
                 {/* Settings Dropdown */}
                 <div className="relative" ref={dropdownRef}>
                     <button 
                         onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-                        className={`p-1 rounded hover:bg-indigo-100 transition-colors flex items-center gap-0.5 ${isDropdownOpen ? 'bg-indigo-100 text-indigo-700' : 'text-indigo-400 hover:text-indigo-600'}`}
+                        className={`p-1 rounded hover:bg-gray-200 transition-colors flex items-center gap-0.5 ${isDropdownOpen ? 'bg-gray-200 text-gray-800' : 'text-gray-400 hover:text-gray-600'}`}
                         title="输出设置"
                     >
                         <Settings size={14} />
@@ -351,11 +339,11 @@ export const CustomAgentNode = memo(({ id, data, selected, isConnectable }: Node
                     disabled={isLoading}
                     className={`p-1 rounded-full transition-colors shadow-sm flex items-center justify-center w-6 h-6
                         ${isLoading 
-                            ? 'bg-indigo-400 cursor-not-allowed' 
-                            : 'bg-indigo-600 hover:bg-indigo-700 text-white'
+                            ? 'bg-gray-400 cursor-not-allowed' 
+                            : 'bg-blue-600 hover:bg-blue-700 text-white'
                         }
                     `}
-                    title="运行智能体"
+                    title="根据内容生成"
                 >
                     {isLoading ? (
                         <Loader2 size={12} className="animate-spin text-white" />
@@ -363,19 +351,13 @@ export const CustomAgentNode = memo(({ id, data, selected, isConnectable }: Node
                         <Play size={10} className="ml-0.5" />
                     )}
                 </button>
-            </div>
+             </div>
         </div>
 
-        {/* Content Body */}
-        <div className="flex-1 p-4 bg-white relative">
-             <div className="absolute inset-0 p-4">
-                <EditableLabel id={id} data={data} isShape />
-             </div>
-             {!data.label && !data.isEditing && (
-                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                     <span className="text-xs text-gray-400 italic">输入提示词...</span>
-                 </div>
-             )}
+        <div className="flex-1 p-4 overflow-y-auto overflow-x-hidden custom-scrollbar bg-white cursor-text"
+             onMouseDown={(e) => e.stopPropagation()} 
+        >
+             <EditorContent editor={editor} className="nodrag nopan h-full" />
         </div>
 
         <CustomHandle type="source" position={Position.Top} id="top" selected={selected} isConnectable={isConnectable} />

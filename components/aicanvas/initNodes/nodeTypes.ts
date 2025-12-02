@@ -1,0 +1,45 @@
+
+import { ToolType } from '../types';
+import { 
+    RectangleNode, 
+    CircleNode, 
+    TextNode, 
+    TriangleNode, 
+    DiamondNode, 
+    ParallelogramNode, 
+    HexagonNode, 
+    CylinderNode, 
+    CloudNode, 
+    DocumentNode,
+    DrawingNode, 
+    GroupNode,
+    SectionNode, 
+    MindMapNode, 
+    StickyNoteNode, 
+    ImageNode, 
+    VideoNode,
+    CustomAgentNode,
+    MarkdownNode
+} from '../nodes/CustomNodes';
+
+export const nodeTypes = {
+  [ToolType.RECTANGLE]: RectangleNode,
+  [ToolType.CIRCLE]: CircleNode,
+  [ToolType.TRIANGLE]: TriangleNode,
+  [ToolType.DIAMOND]: DiamondNode,
+  [ToolType.PARALLELOGRAM]: ParallelogramNode,
+  [ToolType.HEXAGON]: HexagonNode,
+  [ToolType.CYLINDER]: CylinderNode,
+  [ToolType.CLOUD]: CloudNode,
+  [ToolType.DOCUMENT]: DocumentNode,
+  [ToolType.TEXT]: TextNode,
+  [ToolType.PEN]: DrawingNode,
+  [ToolType.GROUP]: GroupNode,
+  [ToolType.SECTION]: SectionNode,
+  [ToolType.MINDMAP]: MindMapNode,
+  [ToolType.STICKY_NOTE]: StickyNoteNode,
+  [ToolType.IMAGE]: ImageNode,
+  [ToolType.VIDEO]: VideoNode,
+  [ToolType.CUSTOM_AGENT]: CustomAgentNode,
+  [ToolType.MARKDOWN]: MarkdownNode,
+};

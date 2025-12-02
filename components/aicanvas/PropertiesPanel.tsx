@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useReactFlow, MarkerType, Node } from 'reactflow';
-import { useStore } from '../store';
+import { useStore } from './store';
 import { 
     X, Type as TypeIcon, Palette, BringToFront, SendToBack,
     AlignLeft, AlignCenter, AlignRight, AlignVerticalJustifyStart, AlignVerticalJustifyCenter, AlignVerticalJustifyEnd,
@@ -9,7 +9,7 @@ import {
     LayoutTemplate, Image as ImageIcon, Video as VideoIcon, Upload,
     Maximize, Crop, Scan, StretchHorizontal, Expand
 } from 'lucide-react';
-import { ToolType } from '../types';
+import { ToolType } from './types';
 
 const PRESET_COLORS = [
   '#ffffff', '#000000', '#94a3b8', '#ef4444', '#f97316', 

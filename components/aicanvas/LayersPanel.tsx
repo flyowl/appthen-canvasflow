@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { useReactFlow } from 'reactflow';
-import { useStore } from '../store';
+import { useStore } from './store';
 import { Layers, ArrowUp, ArrowDown, Cable, Box } from 'lucide-react';
-import { ToolType } from '../types';
+import { ToolType } from './types';
 
 const LayersPanel: React.FC = () => {
   const { isLayersPanelOpen, selectedNodes, setSelectedNodes, selectedEdges, setSelectedEdges } = useStore();

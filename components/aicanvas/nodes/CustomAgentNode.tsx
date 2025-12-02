@@ -1,15 +1,17 @@
+
 import React, { memo, useState, useRef, useEffect } from 'react';
-import { NodeProps, Position, useReactFlow, MarkerType, Node as RFNode } from 'reactflow';
-import { NodeData, ToolType, MindMapItem } from '../../types';
-import { CustomHandle, EditableLabel, ShapeNodeWrapper } from './BaseNode';
+import { NodeProps, Position, MarkerType, Node as RFNode, useReactFlow } from 'reactflow';
+import { NodeData, ToolType, MindMapItem } from '../types';
+import { CustomHandle, ShapeNodeWrapper, EditableLabel } from './BaseNode';
 import { Bot, Play, Settings, Loader2, FileText, GitBranch, ChevronDown, Check } from 'lucide-react';
-import { useStore } from '../../store';
+import { useStore } from '../store';
 import { GoogleGenAI } from "@google/genai";
 
-// --- Helpers for Parsing ---
+// --- Helpers for Parsing (Aligned with AIGenerator) ---
 
 const extractArrayObjects = (text: string, key: string) => {
     const objects: any[] = [];
+    // Regex to find the start of the array: "key": [ or 'key': [ or key: [
     const keyPattern = `["']?${key}["']?\\s*:\\s*\\[`;
     const match = text.match(new RegExp(keyPattern));
     
@@ -23,9 +25,21 @@ const extractArrayObjects = (text: string, key: string) => {
 
     for (let i = startIndex; i < text.length; i++) {
         const char = text[i];
-        if (escape) { escape = false; continue; }
-        if (char === '\\') { escape = true; continue; }
-        if (char === '"') { inString = !inString; continue; }
+        
+        if (escape) {
+            escape = false;
+            continue;
+        }
+        
+        if (char === '\\') {
+            escape = true;
+            continue;
+        }
+
+        if (char === '"') {
+            inString = !inString;
+            continue;
+        }
 
         if (!inString) {
             if (char === '{') {
@@ -36,12 +50,16 @@ const extractArrayObjects = (text: string, key: string) => {
                 if (braceCount === 0 && currentObjStart !== -1) {
                     const jsonStr = text.substring(currentObjStart, i + 1);
                     try {
+                        // Attempt to fix common LLM JSON issues like trailing commas
                         const cleanJson = jsonStr.replace(/,\s*}/g, '}');
                         objects.push(JSON.parse(cleanJson));
-                    } catch (e) { /* ignore */ }
+                    } catch (e) {
+                        // Ignore malformed partials until they are complete/valid
+                    }
                     currentObjStart = -1;
                 }
             } else if (char === ']') {
+                 // End of the target array
                  if (braceCount === 0) break; 
             }
         }
@@ -54,51 +72,68 @@ const buildMindMapTree = (flatNodes: any[]): MindMapItem | null => {
     const nodeMap = new Map<string, MindMapItem>();
     let root: MindMapItem | null = null;
 
+    // 1. Initialize all nodes
     flatNodes.forEach(n => {
-        const safeId = n.id || `temp-${Math.random()}`;
+        const safeId = n.id !== undefined && n.id !== null ? String(n.id) : `temp-${Math.random()}`;
         nodeMap.set(safeId, {
             id: safeId,
             label: n.label || 'Node',
             children: [],
-            style: { backgroundColor: n.backgroundColor, textColor: n.textColor, fontSize: n.fontSize }
+            style: {
+                backgroundColor: n.backgroundColor,
+                textColor: n.textColor,
+                fontSize: n.fontSize
+            }
         });
     });
 
+    // 2. Build Hierarchy
     flatNodes.forEach(n => {
-        const item = nodeMap.get(n.id);
+        const safeId = n.id !== undefined && n.id !== null ? String(n.id) : null;
+        if (!safeId) return;
+        
+        const item = nodeMap.get(safeId);
         if (!item) return;
-        if (n.parentId && nodeMap.has(n.parentId)) {
-            nodeMap.get(n.parentId)?.children.push(item);
-        } else if (!n.parentId || n.parentId === 'root' || n.isRoot) {
+
+        const parentId = n.parentId !== undefined && n.parentId !== null ? String(n.parentId) : null;
+
+        if (parentId && parentId !== 'null' && nodeMap.has(parentId)) {
+            const parent = nodeMap.get(parentId);
+            parent?.children.push(item);
+        } else if (!parentId || parentId === 'root' || n.isRoot) {
             if (!root) root = item;
         }
     });
 
-    if (!root && flatNodes.length > 0) root = nodeMap.get(flatNodes[0].id) || null;
+    // Fallback if no explicit root found but nodes exist
+    if (!root && flatNodes.length > 0) {
+        root = nodeMap.get(String(flatNodes[0].id)) || null;
+    }
+
     return root;
 };
 
-// Helper to extract text context from an upstream node
 const getNodeContext = (node: RFNode<NodeData>): string => {
     if (!node) return '';
     
     if (node.type === ToolType.MARKDOWN && node.data.markdownContent) {
-        return `[Source: Markdown Node]\n${node.data.markdownContent}`;
+        return `[Source: Markdown]\n${node.data.markdownContent.slice(0, 2000)}...`; // Reasonable context limit
     }
     
     if (node.type === ToolType.MINDMAP && node.data.mindMapRoot) {
         const traverse = (item: MindMapItem, depth: number = 0): string => {
+            if (depth > 4) return ''; // Limit depth to avoid excessive tokens
             let text = `${'  '.repeat(depth)}- ${item.label}\n`;
             if (item.children) {
                 text += item.children.map(c => traverse(c, depth + 1)).join('');
             }
             return text;
         };
-        return `[Source: Mind Map Structure]\n${traverse(node.data.mindMapRoot)}`;
+        return `[Source: Mind Map]\n${traverse(node.data.mindMapRoot)}`;
     }
 
     if (node.data.label) {
-        return `[Source: ${node.type} Node]\n${node.data.label}`;
+        return `[Source: ${node.type}]\n${node.data.label}`;
     }
     
     return '';
@@ -110,8 +145,13 @@ export const CustomAgentNode = memo(({ id, data, selected, isConnectable }: Node
   const [isLoading, setIsLoading] = useState(false);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
-
+  
+  const [promptText, setPromptText] = useState(data.label || '');
   const outputType = data.agentOutputType || 'MARKDOWN';
+
+  useEffect(() => {
+      setPromptText(data.label || '');
+  }, [data.label]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -133,29 +173,51 @@ export const CustomAgentNode = memo(({ id, data, selected, isConnectable }: Node
       setIsDropdownOpen(false);
   };
 
+  const handleBlur = () => {
+      if (data.label !== promptText) {
+          setNodes((nds) => nds.map(n => {
+              if (n.id === id) {
+                  return { ...n, data: { ...n.data, label: promptText } };
+              }
+              return n;
+          }));
+      }
+  };
+
   const handleRun = async () => {
-    if (isLoading || !data.label) return;
+    if (isLoading) return;
+    if (!promptText.trim()) {
+        alert("请输入指令内容");
+        return;
+    }
+    
+    handleBlur();
     setIsLoading(true);
     takeSnapshot();
 
     try {
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-        const nodes = getNodes();
-        const edges = getEdges();
-        const currentNode = nodes.find(n => n.id === id);
-        if (!currentNode) return;
+        
+        // Use getter to access the absolute freshest state
+        const currentNodes = getNodes();
+        const currentEdges = getEdges();
+        
+        const currentNode = currentNodes.find(n => n.id === id);
+        if (!currentNode) {
+            throw new Error("Cannot find current node context");
+        }
 
         // 1. Context Awareness: Find Upstream Nodes
-        const incomingEdges = edges.filter(e => e.target === id);
+        const incomingEdges = currentEdges.filter(e => e.target === id);
         const sourceNodes = incomingEdges
-            .map(e => nodes.find(n => n.id === e.source))
+            .map(e => currentNodes.find(n => n.id === e.source))
             .filter(n => n !== undefined) as RFNode<NodeData>[];
         
         let contextPrompt = "";
         if (sourceNodes.length > 0) {
             const contexts = sourceNodes.map(n => getNodeContext(n)).filter(t => t.trim().length > 0);
             if (contexts.length > 0) {
-                contextPrompt = `\n\n### Context Information (from connected previous nodes):\n"""\n${contexts.join('\n\n')}\n"""\n\n(Use the above context to inform your response to the user instruction below.)\n`;
+                contextPrompt = `\n\n### Context Information (from connected inputs):\n"""\n${contexts.join('\n\n')}\n"""\n`;
             }
         }
 
@@ -165,33 +227,38 @@ export const CustomAgentNode = memo(({ id, data, selected, isConnectable }: Node
         const newId = `ai-gen-${Date.now()}`;
 
         if (outputType === 'MARKDOWN') {
-            const prompt = `You are a helpful assistant. 
+            // --- MARKDOWN MODE ---
+            const instructions = `You are a helpful AI assistant.
             ${contextPrompt}
             
-            ### User Instruction: "${data.label}". 
+            ### Instruction:
+            ${promptText}
             
-            Generate a comprehensive and well-structured Markdown response.
-            Use headers, lists, and bold text to make it readable. Do not wrap in markdown code blocks.`;
+            **Response Guidelines:**
+            - Output pure Markdown format.
+            - Use headers (#, ##), lists, and bold text for clarity.
+            - Do NOT wrap the entire response in a markdown code block (like \`\`\`markdown ... \`\`\`). Just return the markdown content directly.
+            `;
 
-            // 1. Create Node Immediately
+            // 1. Create Placeholder Node Immediately
             const newNode: RFNode<NodeData> = {
                 id: newId,
                 type: ToolType.MARKDOWN,
                 position: { x: startX, y: startY },
                 data: {
                     ...defaultStyle,
-                    markdownContent: 'Generating...',
+                    markdownContent: '🤖 AI 正在思考中...',
                     backgroundColor: '#ffffff',
                     borderColor: '#e2e8f0',
                     borderWidth: 1,
-                    width: 400,
-                    height: 500
+                    width: 450,
+                    height: 600
                 },
-                style: { width: 400, height: 500 }
+                style: { width: 450, height: 600 }
             };
             setNodes((nds) => [...nds, newNode]);
 
-            // 2. Create Edge Immediately
+            // 2. Create Connection Edge
             const newEdge = {
                 id: `edge-${id}-${newId}`,
                 source: id,
@@ -205,83 +272,119 @@ export const CustomAgentNode = memo(({ id, data, selected, isConnectable }: Node
             };
             setEdges((eds) => [...eds, newEdge]);
 
-            // 3. Stream Content
+            // 3. Stream Content (Identical structure to AIGenerator)
             const result = await ai.models.generateContentStream({
                 model: 'gemini-2.5-flash',
-                contents: prompt,
+                contents: { parts: [{ text: instructions }] },
             });
 
             let fullText = '';
             for await (const chunk of result) {
-                const text = chunk.text;
-                if (text) {
-                    fullText += text;
-                    setNodes((nds) => nds.map(n => {
-                        if (n.id === newId) {
-                            return { ...n, data: { ...n.data, markdownContent: fullText } };
-                        }
-                        return n;
-                    }));
-                }
+                fullText += chunk.text || '';
+                
+                setNodes((nds) => nds.map(n => {
+                    if (n.id === newId) {
+                        return { ...n, data: { ...n.data, markdownContent: fullText } };
+                    }
+                    return n;
+                }));
             }
+
         } else {
-            // MINDMAP
-            const prompt = `
+            // --- MINDMAP MODE ---
+            const instructions = `You are an expert Mind Map generator.
             ${contextPrompt}
             
-            ### User Instruction: "${data.label}".
+            ### Instruction:
+            ${promptText}
 
-            Generate a Mind Map based on the instruction and context (if provided).
-            Return a JSON object with a "nodes" array.
-            Each node object must have: "id", "label", "parentId" (null for root).
-            Generate at least 3 levels.
-            NO Markdown. JSON ONLY.`;
+            **Task:**
+            Generate a Mind Map structure based on the instruction.
+            
+            **Output Format (Strict JSON):**
+            Return a valid JSON object with a single key "nodes" containing an array of node objects.
+            
+            Node Object Schema:
+            {
+                "id": "unique_string_id",
+                "label": "Concise Label",
+                "parentId": "parent_node_id_or_null_for_root"
+            }
+            
+            **Rules:**
+            - The root node must have "parentId": null.
+            - Generate at least 3 levels of depth if possible.
+            - Do NOT output Markdown. Output ONLY JSON.
+            `;
 
+            // 1. Create Placeholder Node
+            const newNode: RFNode<NodeData> = {
+                id: newId,
+                type: ToolType.MINDMAP,
+                position: { x: startX, y: startY },
+                data: {
+                    ...defaultStyle,
+                    mindMapRoot: { id: 'root', label: 'Generating...', children: [] },
+                    backgroundColor: 'transparent',
+                    borderColor: 'transparent',
+                    borderWidth: 0,
+                },
+                style: { width: 600, height: 400 }
+            };
+            setNodes((nds) => [...nds, newNode]);
+
+            // 2. Create Connection Edge
+            const newEdge = {
+                id: `edge-${id}-${newId}`,
+                source: id,
+                target: newId,
+                sourceHandle: 'right',
+                targetHandle: 'main-left',
+                type: 'default',
+                animated: true,
+                style: { stroke: '#6366f1', strokeWidth: 2 },
+                markerEnd: { type: MarkerType.ArrowClosed, color: '#6366f1' }
+            };
+            setEdges((eds) => [...eds, newEdge]);
+
+            // 3. Generate Content (JSON Mode)
             const response = await ai.models.generateContent({
                 model: 'gemini-2.5-flash',
-                contents: prompt,
+                contents: { parts: [{ text: instructions }] },
                 config: { responseMimeType: "application/json" }
             });
 
-            const flatNodes = extractArrayObjects(response.text, 'nodes');
+            const textResponse = response.text || '';
+            const flatNodes = extractArrayObjects(textResponse, 'nodes');
             const tree = buildMindMapTree(flatNodes);
 
             if (tree) {
                 tree.layoutDirection = 'LR';
-                const newNode: RFNode<NodeData> = {
-                    id: newId,
-                    type: ToolType.MINDMAP,
-                    position: { x: startX, y: startY },
-                    data: {
-                        ...defaultStyle,
-                        mindMapRoot: tree,
-                        backgroundColor: 'transparent',
-                        borderColor: 'transparent',
-                        borderWidth: 0,
-                    },
-                    style: { width: 600, height: 400 }
-                };
-                setNodes((nds) => [...nds, newNode]);
-
-                // Create Edge for MindMap (after generation)
-                const newEdge = {
-                    id: `edge-${id}-${newId}`,
-                    source: id,
-                    target: newId,
-                    sourceHandle: 'right', // Connect from right
-                    targetHandle: 'main-left', // Connect to left (MindMap specific handle)
-                    type: 'default',
-                    animated: true,
-                    style: { stroke: '#6366f1', strokeWidth: 2 },
-                    markerEnd: { type: MarkerType.ArrowClosed, color: '#6366f1' }
-                };
-                setEdges((eds) => [...eds, newEdge]);
+                setNodes((nds) => nds.map(n => {
+                    if (n.id === newId) {
+                        return { 
+                            ...n, 
+                            data: { ...n.data, mindMapRoot: tree } 
+                        };
+                    }
+                    return n;
+                }));
+            } else {
+                setNodes((nds) => nds.map(n => {
+                    if (n.id === newId) {
+                        return { 
+                            ...n, 
+                            data: { ...n.data, mindMapRoot: { id: 'err', label: 'Generation Failed', children: [] } } 
+                        };
+                    }
+                    return n;
+                }));
             }
         }
 
-    } catch (e) {
+    } catch (e: any) {
         console.error("Agent generation failed", e);
-        alert("生成失败，请稍后重试");
+        alert(`生成失败: ${e.message || '未知错误'}`);
     } finally {
         setIsLoading(false);
     }
@@ -295,12 +398,12 @@ export const CustomAgentNode = memo(({ id, data, selected, isConnectable }: Node
         }`}
       >
         {/* Header */}
-        <div className="bg-indigo-50 px-3 py-2 border-b border-indigo-100 flex items-center justify-between z-50">
+        <div className="bg-indigo-50 px-3 py-2 border-b border-indigo-100 flex items-center justify-between z-50 shrink-0">
             <div className="flex items-center gap-2 text-indigo-900 font-semibold text-xs select-none">
                 <Bot size={16} className="text-indigo-600" />
                 <span>智能体</span>
                 <span className="text-indigo-400">|</span>
-                <span className="text-[10px] text-indigo-600 uppercase flex items-center gap-1 bg-white/50 px-1.5 py-0.5 rounded">
+                <span className="text-[10px] text-indigo-600 uppercase flex items-center gap-1 bg-white/50 px-1.5 py-0.5 rounded border border-indigo-100">
                     {outputType === 'MARKDOWN' ? <FileText size={10} /> : <GitBranch size={10} />}
                     {outputType === 'MARKDOWN' ? '富文本' : '思维导图'}
                 </span>
@@ -352,10 +455,10 @@ export const CustomAgentNode = memo(({ id, data, selected, isConnectable }: Node
                     className={`p-1 rounded-full transition-colors shadow-sm flex items-center justify-center w-6 h-6
                         ${isLoading 
                             ? 'bg-indigo-400 cursor-not-allowed' 
-                            : 'bg-indigo-600 hover:bg-indigo-700 text-white'
+                            : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-200'
                         }
                     `}
-                    title="运行智能体"
+                    title="运行智能体 (Ctrl+Enter)"
                 >
                     {isLoading ? (
                         <Loader2 size={12} className="animate-spin text-white" />
@@ -367,15 +470,23 @@ export const CustomAgentNode = memo(({ id, data, selected, isConnectable }: Node
         </div>
 
         {/* Content Body */}
-        <div className="flex-1 p-4 bg-white relative">
-             <div className="absolute inset-0 p-4">
-                <EditableLabel id={id} data={data} isShape />
-             </div>
-             {!data.label && !data.isEditing && (
-                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                     <span className="text-xs text-gray-400 italic">输入提示词...</span>
-                 </div>
-             )}
+        <div className="flex-1 relative bg-white flex flex-col group/input">
+             <textarea 
+                value={promptText}
+                onChange={(e) => setPromptText(e.target.value)}
+                onBlur={handleBlur}
+                className="w-full h-full resize-none outline-none text-sm p-4 bg-transparent text-gray-700 placeholder-gray-400 custom-scrollbar nodrag cursor-text"
+                placeholder="在此输入指令... (例如：生成一份关于AI的行业报告大纲)"
+                style={{ lineHeight: 1.6 }}
+                onKeyDown={(e) => {
+                    // Allow Ctrl+Enter to run
+                    if(e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                        e.preventDefault();
+                        handleRun();
+                    }
+                    e.stopPropagation(); // Stop propagation to canvas
+                }}
+             />
         </div>
 
         <CustomHandle type="source" position={Position.Top} id="top" selected={selected} isConnectable={isConnectable} />

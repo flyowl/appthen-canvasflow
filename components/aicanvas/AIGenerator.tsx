@@ -1,10 +1,9 @@
-
 import React, { useState, useRef } from 'react';
-import { useStore } from '../store';
+import { useStore } from './store';
 import { useReactFlow, Node, Edge } from 'reactflow';
 import { X, Sparkles, Loader2, GitBranch, LayoutDashboard, Image as ImageIcon, Trash2, Zap, FileText } from 'lucide-react';
 import { GoogleGenAI } from "@google/genai";
-import { ToolType, NodeData, MindMapItem } from '../types';
+import { ToolType, NodeData, MindMapItem } from './types';
 
 // Robust helper to extract complete JSON objects from a streaming string
 const extractArrayObjects = (text: string, key: string) => {
